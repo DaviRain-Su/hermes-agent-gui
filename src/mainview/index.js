@@ -1061,6 +1061,7 @@ async function loadSessionMessages(sessionId, displayName, showAll = false) {
     });
     updateTokenUsageDisplay();
     renderTodos();
+    loadDraft();
   } catch (e) {
     console.error("Failed to load session messages:", e);
   }
@@ -1688,6 +1689,7 @@ ${text}`;
   input.style.height = "auto";
   attachments = [];
   renderAttachments();
+  clearDraft();
   const targetSessionId = currentSessionId || "new";
   activeStreamController = new AbortController;
   sendBtn.disabled = true;
@@ -1805,10 +1807,37 @@ function newChat() {
   const usageEl = $("#token-usage-display");
   if (usageEl)
     usageEl.textContent = "";
+  loadDraft();
 }
 function focusInput() {
   const input = $("#message-input");
   input?.focus();
+}
+function draftKey(sessionId) {
+  return `hermes-draft-${sessionId || "new"}`;
+}
+function saveDraft() {
+  const input = $("#message-input");
+  if (!input)
+    return;
+  const text = input.value;
+  if (text.trim()) {
+    localStorage.setItem(draftKey(currentSessionId), text);
+  } else {
+    localStorage.removeItem(draftKey(currentSessionId));
+  }
+}
+function loadDraft() {
+  const input = $("#message-input");
+  if (!input)
+    return;
+  const text = localStorage.getItem(draftKey(currentSessionId)) || "";
+  input.value = text;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+}
+function clearDraft() {
+  localStorage.removeItem(draftKey(currentSessionId));
 }
 window.newChat = newChat;
 window.focusInput = focusInput;
@@ -2839,6 +2868,7 @@ function initPage() {
       input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
       updateSlashMenu();
       updateMentionMenu();
+      saveDraft();
     });
     input.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") {

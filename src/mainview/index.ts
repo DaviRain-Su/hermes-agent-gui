@@ -1134,6 +1134,7 @@ async function loadSessionMessages(sessionId: string, displayName?: string, show
     });
     updateTokenUsageDisplay();
     renderTodos();
+    loadDraft();
   } catch (e) {
     console.error("Failed to load session messages:", e);
   }
@@ -1892,6 +1893,7 @@ async function sendMessage() {
   input.style.height = "auto";
   attachments = [];
   renderAttachments();
+  clearDraft();
 
   const targetSessionId = currentSessionId || "new";
   activeStreamController = new AbortController();
@@ -2013,11 +2015,40 @@ function newChat() {
   $$<HTMLDivElement>(".session-item").forEach((el) => el.classList.remove("active"));
   const usageEl = $("#token-usage-display");
   if (usageEl) usageEl.textContent = "";
+  loadDraft();
 }
 
 function focusInput() {
   const input = $("#message-input") as HTMLTextAreaElement | null;
   input?.focus();
+}
+
+function draftKey(sessionId?: string) {
+  return `hermes-draft-${sessionId || "new"}`;
+}
+
+function saveDraft() {
+  const input = $("#message-input") as HTMLTextAreaElement | null;
+  if (!input) return;
+  const text = input.value;
+  if (text.trim()) {
+    localStorage.setItem(draftKey(currentSessionId), text);
+  } else {
+    localStorage.removeItem(draftKey(currentSessionId));
+  }
+}
+
+function loadDraft() {
+  const input = $("#message-input") as HTMLTextAreaElement | null;
+  if (!input) return;
+  const text = localStorage.getItem(draftKey(currentSessionId)) || "";
+  input.value = text;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+}
+
+function clearDraft() {
+  localStorage.removeItem(draftKey(currentSessionId));
 }
 
 (window as any).newChat = newChat;
@@ -3094,6 +3125,7 @@ function initPage() {
       input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
       updateSlashMenu();
       updateMentionMenu();
+      saveDraft();
     });
     input.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") {
