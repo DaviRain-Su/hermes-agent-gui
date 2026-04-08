@@ -33,6 +33,10 @@
       "scripts/**/*"
     ],
     "electronDist": "node_modules/electron/dist",
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    },
     "linux": {
       "target": [
         {
