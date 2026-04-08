@@ -325,6 +325,11 @@ async function loadWorkspace() {
           e.stopPropagation();
           deleteWsEntry(el.dataset.path || "");
         });
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          const isDir = el.dataset.dir === "1";
+          showWorkspaceContextMenu(e, el.dataset.path || "", isDir);
+        });
       });
     }
 
@@ -487,6 +492,44 @@ async function deleteWsEntry(path: string) {
   } catch (e: any) {
     alert("Delete failed: " + e.message);
   }
+}
+
+function hideWorkspaceContextMenu() {
+  $(".workspace-context-menu")?.remove();
+}
+
+function showWorkspaceContextMenu(e: MouseEvent, path: string, isDirectory: boolean) {
+  e.preventDefault();
+  hideWorkspaceContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "workspace-context-menu";
+  menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;`;
+  const items: { label: string; action: () => void }[] = [];
+  items.push({
+    label: isDirectory ? "Open folder" : "Open file",
+    action: () => {
+      if (isDirectory) {
+        workspacePath = path;
+        closePreview();
+        loadWorkspace();
+      } else {
+        openPreview(path);
+      }
+    },
+  });
+  items.push({ label: "Rename", action: () => renameWsEntry(path) });
+  items.push({ label: "Delete", action: () => deleteWsEntry(path) });
+  items.forEach((it) => {
+    const row = document.createElement("div");
+    row.className = "context-menu-item";
+    row.textContent = it.label;
+    row.addEventListener("click", () => {
+      it.action();
+      hideWorkspaceContextMenu();
+    });
+    menu.appendChild(row);
+  });
+  document.body.appendChild(menu);
 }
 
 async function loadTasks() {
@@ -3644,6 +3687,7 @@ function initPage() {
     if (e.target === $("#lightbox")) closeLightbox();
   });
   document.addEventListener("click", (e) => {
+    hideWorkspaceContextMenu();
     const target = e.target as HTMLElement;
     if (target.tagName === "IMG" && (target.closest(".message-content") || target.closest("#preview-content"))) {
       openLightbox((target as HTMLImageElement).src);

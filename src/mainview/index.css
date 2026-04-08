@@ -2499,6 +2499,28 @@ html, body {
   color: var(--accent);
 }
 
+.workspace-context-menu {
+  position: fixed;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 0;
+  z-index: 1000;
+  min-width: 120px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+}
+
+.context-menu-item {
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.context-menu-item:hover {
+  background: var(--bg-tertiary);
+}
+
 .workspace-breadcrumb {
   display: flex;
   flex-wrap: wrap;
