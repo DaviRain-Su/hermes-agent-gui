@@ -108,6 +108,38 @@ let currentSessionId = "";
 let attachments: Attachment[] = [];
 let currentModelConfig = { model: "", provider: "" };
 const backgroundErrors = new Map<string, string>();
+
+const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  "gpt-4": 8192,
+  "gpt-4o": 128000,
+  "gpt-4o-mini": 128000,
+  "gpt-5": 256000,
+  "gpt-5.4-mini": 256000,
+  "claude-3-5-sonnet": 200000,
+  "claude-3-7-sonnet": 200000,
+  "claude-3-opus": 200000,
+  "claude-4-sonnet": 200000,
+  "claude-4-opus": 200000,
+  "gemini-1.5-pro": 128000,
+  "gemini-2.0-flash": 1000000,
+  "gemini-2.5-pro": 1000000,
+  "deepseek-chat": 64000,
+  "deepseek-reasoner": 64000,
+  "o1": 128000,
+  "o3": 200000,
+  "o3-mini": 200000,
+  "kimi-k2.5": 256000,
+  "kimi-k2": 256000,
+  "qwen2.5": 128000,
+  "qwen-max": 32000,
+  "default": 128000,
+};
+
+function getContextLimit(model: string): number {
+  const key = Object.keys(MODEL_CONTEXT_LIMITS).find((k) => model.toLowerCase().includes(k));
+  return key ? MODEL_CONTEXT_LIMITS[key] : MODEL_CONTEXT_LIMITS.default;
+}
+
 let workspacePath = "";
 let previewHasChanges = false;
 const activeApprovalCards = new Map<string, HTMLElement>();
@@ -1589,16 +1621,22 @@ async function sendMessage() {
 
 async function updateTokenUsageDisplay() {
   const el = $("#token-usage-display");
-  if (!el) return;
+  const metrics = $("#composer-metrics");
+  const barWrap = $("#context-bar");
+  const fill = $("#context-fill") as HTMLElement | null;
+  const label = $("#context-label");
+  if (!el || !metrics) return;
   const enabled = localStorage.getItem("hermes-token-usage") === "1";
   if (!enabled || !currentSessionId) {
     el.textContent = "";
+    metrics.style.display = "none";
     return;
   }
   try {
     const data = await rpc.request.getTokenUsage({ sessionId: currentSessionId });
     if (data.error) {
       el.textContent = "";
+      metrics.style.display = "none";
       return;
     }
     const parts: string[] = [];
@@ -1607,8 +1645,22 @@ async function updateTokenUsageDisplay() {
     if (data.estimatedCost > 0) parts.push(`$${data.estimatedCost.toFixed(4)}`);
     else if (data.actualCost > 0) parts.push(`$${data.actualCost.toFixed(4)}`);
     el.textContent = parts.join(" · ");
+
+    // Context usage bar
+    const limit = getContextLimit(currentModelConfig.model);
+    const pct = limit > 0 ? Math.min(100, (totalTokens / limit) * 100) : 0;
+    if (fill && label && barWrap) {
+      fill.style.width = `${pct}%`;
+      fill.classList.remove("warn", "danger");
+      if (pct >= 80) fill.classList.add("danger");
+      else if (pct >= 50) fill.classList.add("warn");
+      label.textContent = `${totalTokens.toLocaleString()} / ${(limit / 1000).toFixed(0)}k`;
+      barWrap.style.display = "flex";
+    }
+    metrics.style.display = "flex";
   } catch (e) {
     el.textContent = "";
+    metrics.style.display = "none";
   }
 }
 
@@ -2473,6 +2525,14 @@ function initPage() {
     if (e.key === "Enter") performLogin();
   });
 
+  // Mobile nav
+  $$(".mobile-nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const panel = (btn as HTMLButtonElement).dataset.panel || "chat";
+      mobileSwitchPanel(panel);
+    });
+  });
+
   startApprovalPolling();
 }
 
@@ -2520,6 +2580,30 @@ function startApprovalPolling() {
       }
     } catch {}
   }, 2000);
+}
+
+function mobileSwitchPanel(name: string) {
+  const sidebar = $(".sidebar");
+  if (name === "chat") {
+    sidebar?.classList.remove("open");
+    $("#settings-overlay")?.classList.add("hidden");
+  } else if (name === "settings") {
+    sidebar?.classList.remove("open");
+    openSettings();
+  } else {
+    sidebar?.classList.add("open");
+    $("#settings-overlay")?.classList.add("hidden");
+    // Expand target panel, collapse others
+    $("#workspace-panel")?.classList.toggle("collapsed", name !== "workspace");
+    $("#tasks-panel")?.classList.toggle("collapsed", name !== "tasks");
+    $("#todos-panel")?.classList.toggle("collapsed", name !== "todos");
+    $("#memory-panel")?.classList.toggle("collapsed", name !== "memory");
+  }
+  // Update active tab
+  $$(".mobile-nav-btn").forEach((btn) => {
+    const isActive = (btn as HTMLButtonElement).dataset.panel === name;
+    btn.classList.toggle("active", isActive);
+  });
 }
 
 if (document.readyState === "loading") {

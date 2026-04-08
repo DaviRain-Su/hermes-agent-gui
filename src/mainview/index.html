@@ -236,7 +236,13 @@
         </div>
         <div class="input-footer">
           <span class="input-hint">Hermes can browse the web, run code, and use tools. Streaming enabled.</span>
-          <span class="token-usage" id="token-usage-display"></span>
+          <div class="composer-metrics" id="composer-metrics" style="display:none">
+            <span class="token-usage" id="token-usage-display"></span>
+            <div class="context-bar" id="context-bar">
+              <div class="context-track"><div class="context-fill" id="context-fill"></div></div>
+              <span class="context-label" id="context-label"></span>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -341,5 +347,14 @@
   </div>
 
   <script src="index.js"></script>
+
+  <!-- Mobile bottom navigation -->
+  <nav class="mobile-nav">
+    <button class="mobile-nav-btn active" data-panel="chat" title="Chat" aria-label="Chat">💬</button>
+    <button class="mobile-nav-btn" data-panel="todos" title="Todos" aria-label="Todos">☑️</button>
+    <button class="mobile-nav-btn" data-panel="tasks" title="Tasks" aria-label="Tasks">📝</button>
+    <button class="mobile-nav-btn" data-panel="memory" title="Memory" aria-label="Memory">🧠</button>
+    <button class="mobile-nav-btn" data-panel="settings" title="Settings" aria-label="Settings">⚙️</button>
+  </nav>
 </body>
 </html>

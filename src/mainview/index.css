@@ -1192,6 +1192,48 @@ html, body {
   white-space: nowrap;
 }
 
+.composer-metrics {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.context-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-track {
+  width: 120px;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.context-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: 3px;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.context-fill.warn {
+  background: #f59e0b;
+}
+
+.context-fill.danger {
+  background: var(--error);
+}
+
+.context-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .toggle-label {
   display: inline-flex;
   align-items: center;
@@ -1962,11 +2004,11 @@ html, body {
   }
 
   .messages {
-    padding: 14px;
+    padding: 14px 14px 70px;
   }
 
   .input-area {
-    padding: 10px 14px 14px;
+    padding: 10px 14px 70px;
   }
 
   .message {
@@ -1986,6 +2028,43 @@ html, body {
   .code-copy-btn {
     padding: 2px 6px;
   }
+
+  .mobile-nav {
+    display: flex;
+  }
+}
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  z-index: 1000;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.mobile-nav-btn {
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.mobile-nav-btn.active {
+  color: var(--accent);
 }
 
 .slash-menu {
