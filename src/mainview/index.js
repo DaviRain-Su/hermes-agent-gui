@@ -2512,6 +2512,23 @@ function exportToPDF() {
 function formatContentForPrint(content) {
   return escapeHtml(content).replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>");
 }
+function openLightbox(src) {
+  const box = $("#lightbox");
+  const img = $("#lightbox-img");
+  if (!box || !img)
+    return;
+  img.src = src;
+  box.classList.remove("hidden");
+}
+function closeLightbox() {
+  const box = $("#lightbox");
+  const img = $("#lightbox-img");
+  if (!box)
+    return;
+  box.classList.add("hidden");
+  if (img)
+    img.src = "";
+}
 function renderReplyBar() {
   const bar = $("#reply-bar");
   const preview = $("#reply-preview");
@@ -3262,6 +3279,12 @@ function initPage() {
       }
     }
     if (e.key === "Escape") {
+      const lightbox = $("#lightbox");
+      if (lightbox && !lightbox.classList.contains("hidden")) {
+        e.preventDefault();
+        closeLightbox();
+        return;
+      }
       const searchBar = $("#chat-search-bar");
       if (searchBar && !searchBar.classList.contains("hidden")) {
         e.preventDefault();
@@ -3279,6 +3302,16 @@ function initPage() {
   $("#shortcuts-overlay")?.addEventListener("click", (e) => {
     if (e.target === $("#shortcuts-overlay"))
       hideShortcutsOverlay();
+  });
+  $("#lightbox")?.addEventListener("click", (e) => {
+    if (e.target === $("#lightbox"))
+      closeLightbox();
+  });
+  document.addEventListener("click", (e) => {
+    const target = e.target;
+    if (target.tagName === "IMG" && (target.closest(".message-content") || target.closest("#preview-content"))) {
+      openLightbox(target.src);
+    }
   });
   const chatContainer = $("#chat-container");
   const dropOverlay = $("#drop-overlay");
