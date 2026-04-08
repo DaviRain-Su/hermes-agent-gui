@@ -138,6 +138,23 @@ async function initAfterBackendReady() {
   loadSkills();
   loadProfiles();
   loadWorkspace();
+  if (!sessionStorage.getItem("hermes-update-checked")) {
+    try {
+      const update = await rpc.request.checkForUpdates({});
+      if (update.hasUpdate) {
+        const banner = $("#update-banner");
+        const text = $("#update-text");
+        const link = $("#update-link");
+        if (banner && text) {
+          text.textContent = `Update available: v${update.latestVersion} (current v${update.currentVersion})`;
+          if (link && update.url)
+            link.href = update.url;
+          banner.classList.remove("hidden");
+        }
+      }
+    } catch {}
+    sessionStorage.setItem("hermes-update-checked", "1");
+  }
 }
 async function loadCurrentModel() {
   try {
@@ -2449,6 +2466,13 @@ function initPage() {
     if (!$("#memory-panel")?.classList.contains("collapsed"))
       loadMemory();
   });
+  $("#update-dismiss")?.addEventListener("click", () => {
+    $("#update-banner")?.classList.add("hidden");
+    sessionStorage.setItem("hermes-update-dismissed", "1");
+  });
+  if (sessionStorage.getItem("hermes-update-dismissed")) {
+    $("#update-banner")?.classList.add("hidden");
+  }
   $("#memory-save-btn")?.addEventListener("click", saveMemory);
   $$(".memory-tab").forEach((btn) => {
     btn.addEventListener("click", () => {

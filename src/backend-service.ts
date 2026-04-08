@@ -1367,6 +1367,33 @@ listSessions: async () => {
       }
     },
 
+    checkForUpdates: async () => {
+      try {
+        const pkgPath = join(import.meta.dir, "..", "..", "package.json");
+        const pkg = JSON.parse(await Bun.file(pkgPath).text());
+        const current = pkg.version || "0.0.0";
+        const res = await fetch("https://api.github.com/repos/DaviRain-Su/hermes-agent-gui/releases/latest", { headers: { "Accept": "application/vnd.github+json", "User-Agent": "hermes-agent-gui" } });
+        if (!res.ok) return { hasUpdate: false };
+        const data = await res.json();
+        const latest = (data.tag_name || "").replace(/^v/, "");
+        if (!latest) return { hasUpdate: false };
+        // naive semver compare
+        const parse = (v: string) => v.split(".").map((n) => parseInt(n, 10) || 0);
+        const curParts = parse(current);
+        const latParts = parse(latest);
+        let hasUpdate = false;
+        for (let i = 0; i < Math.max(curParts.length, latParts.length); i++) {
+          const a = latParts[i] || 0;
+          const b = curParts[i] || 0;
+          if (a > b) { hasUpdate = true; break; }
+          if (a < b) { hasUpdate = false; break; }
+        }
+        return { hasUpdate, currentVersion: current, latestVersion: latest, url: data.html_url || "" };
+      } catch (e: any) {
+        return { hasUpdate: false };
+      }
+    },
+
     openExternal: async ({ url }) => {
       const platform = process.platform;
       const cmd = platform === "darwin" ? "open" : platform === "win32" ? "start" : "xdg-open";
