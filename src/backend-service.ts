@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, basename } from "node:path";
+import { join, resolve, basename, extname } from "node:path";
 import { type Subprocess, spawn } from "bun";
 import { Database } from "bun:sqlite";
 import { readdirSync, statSync } from "node:fs";
@@ -1204,6 +1204,14 @@ listSessions: async () => {
         safeWorkspacePath(target);
         if (!existsSync(target) || statSync(target).isDirectory()) {
           return { error: "File not found" };
+        }
+        const ext = extname(target).toLowerCase();
+        const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"];
+        if (imageExts.includes(ext)) {
+          const mime = ext === ".svg" ? "image/svg+xml" : `image/${ext === ".jpg" ? "jpeg" : ext.slice(1)}`;
+          const buf = readFileSync(target);
+          const base64 = Buffer.from(buf).toString("base64");
+          return { content: `data:${mime};base64,${base64}`, isImage: true, path: requestedPath };
         }
         const content = readFileSync(target, "utf-8");
         return { content, path: requestedPath };

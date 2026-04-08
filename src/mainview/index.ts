@@ -355,20 +355,27 @@ async function openPreview(path: string) {
     previewHasChanges = false;
 
     const isMarkdown = path.toLowerCase().endsWith(".md");
+    const isImage = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => path.toLowerCase().endsWith(e));
 
-    editor?.classList.remove("hidden");
-    saveBtn?.classList.remove("hidden");
-    if (editor) editor.value = data.content || "";
-    if (isMarkdown) {
-      contentEl.innerHTML = formatContent(data.content || "");
+    if (isImage) {
+      editor?.classList.add("hidden");
+      saveBtn?.classList.add("hidden");
+      contentEl.innerHTML = `<img src="${escapeHtml(data.content || "")}" style="max-width:100%;border-radius:8px;display:block;" alt="${escapeHtml(path)}" />`;
     } else {
-      contentEl.innerHTML = `<pre><code>${escapeHtml(data.content || "")}</code></pre>`;
-    }
-    if (editor) {
-      editor.oninput = () => {
-        previewHasChanges = true;
-        saveBtn?.classList.remove("hidden");
-      };
+      editor?.classList.remove("hidden");
+      saveBtn?.classList.remove("hidden");
+      if (editor) editor.value = data.content || "";
+      if (isMarkdown) {
+        contentEl.innerHTML = formatContent(data.content || "");
+      } else {
+        contentEl.innerHTML = `<pre><code>${escapeHtml(data.content || "")}</code></pre>`;
+      }
+      if (editor) {
+        editor.oninput = () => {
+          previewHasChanges = true;
+          saveBtn?.classList.remove("hidden");
+        };
+      }
     }
   } catch (e: any) {
     alert("Preview failed: " + e.message);
