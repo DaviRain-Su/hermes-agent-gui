@@ -61,6 +61,7 @@ var currentModelConfig = { model: "", provider: "" };
 var backgroundErrors = new Map;
 var workspacePath = "";
 var previewHasChanges = false;
+var activeApprovalCards = new Map;
 var $ = (sel) => document.querySelector(sel);
 var $$ = (sel) => document.querySelectorAll(sel);
 window.$ = $;
@@ -954,6 +955,11 @@ function appendMessage(role, content, timestamp) {
       window.mermaid.run({ nodes: contentDiv.querySelectorAll(".mermaid") });
     } catch {}
   }
+  if (window.Prism) {
+    try {
+      window.Prism.highlightAllUnder(contentDiv);
+    } catch {}
+  }
   return contentDiv;
 }
 function editMessage(wrapper) {
@@ -1002,14 +1008,23 @@ function renderErrorBanner() {
 }
 function formatContent(text) {
   let html = escapeHtml(text);
+  const langMap = {
+    js: "javascript",
+    ts: "typescript",
+    py: "python",
+    sh: "bash",
+    shell: "bash",
+    yml: "yaml"
+  };
   html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
     const lg = (lang || "").toLowerCase();
     const safeCode = escapeHtml(code.trim());
     if (lg === "mermaid") {
       return `<div class="mermaid">${safeCode}</div>`;
     }
+    const prismLang = langMap[lg] || lg || "text";
     const safeLang = escapeHtml(lang || "");
-    return `<div class="code-block"><div class="code-header"><span class="code-lang">${safeLang}</span><button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code>${safeCode}</code></pre></div>`;
+    return `<div class="code-block"><div class="code-header"><span class="code-lang">${safeLang}</span><button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code class="language-${prismLang}">${safeCode}</code></pre></div>`;
   });
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
@@ -2155,6 +2170,53 @@ function initPage() {
       }
     }
   }, 800);
+  startApprovalPolling();
+}
+function showApprovalCard(sessionId, pending) {
+  const messagesEl = $("#messages");
+  if (!messagesEl)
+    return;
+  const existing = activeApprovalCards.get(sessionId);
+  if (existing)
+    existing.remove();
+  const card = document.createElement("div");
+  card.className = "approval-card";
+  const keys = JSON.stringify(pending.pattern_keys || [pending.pattern_key || ""]);
+  card.innerHTML = `
+    <div class="approval-title">⚠️ Dangerous command detected</div>
+    <pre class="approval-command">${escapeHtml(pending.command || pending.prompt || "")}</pre>
+    <div class="approval-actions">
+      <button data-choice="once">Allow once</button>
+      <button data-choice="session">Allow session</button>
+      <button data-choice="always">Always allow</button>
+      <button data-choice="deny" class="danger">Deny</button>
+    </div>
+  `;
+  card.querySelectorAll("button[data-choice]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const choice = btn.dataset.choice || "deny";
+      try {
+        await rpc.request.respondApproval({ sessionId, choice, patternKeys: JSON.parse(keys) });
+      } catch {}
+      card.remove();
+      activeApprovalCards.delete(sessionId);
+    });
+  });
+  messagesEl.appendChild(card);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  activeApprovalCards.set(sessionId, card);
+}
+function startApprovalPolling() {
+  setInterval(async () => {
+    if (!currentSessionId)
+      return;
+    try {
+      const data = await rpc.request.getPendingApproval({ sessionId: currentSessionId });
+      if (data.pending && !activeApprovalCards.has(currentSessionId)) {
+        showApprovalCard(currentSessionId, data.pending);
+      }
+    } catch {}
+  }, 2000);
 }
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initPage);

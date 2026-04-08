@@ -460,6 +460,28 @@ async function runCronManager(args: string[]): Promise<any> {
   return JSON.parse(stdout.trim());
 }
 
+function getApprovalManagerPath(): string {
+  const bundled = join(import.meta.dir, "..", "python", "approval_manager.py");
+  const dev = join(process.cwd(), "python", "approval_manager.py");
+  return existsSync(bundled) ? bundled : dev;
+}
+
+async function runApprovalManager(args: string[]): Promise<any> {
+  const script = getApprovalManagerPath();
+  const proc = spawn([pythonPath, script, ...args], {
+    env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME } as any,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(stderr || `approval_manager failed with code ${exitCode}`);
+  }
+  return JSON.parse(stdout.trim());
+}
+
 function loadSpaces(): any[] {
   try {
     const text = readFileSync(SPACES_FILE, "utf-8");
@@ -671,6 +693,27 @@ listSessions: async () => {
         return await runCronManager(["output", jobId]);
       } catch (e: any) {
         return { outputs: [] };
+      }
+    },
+
+    getPendingApproval: async ({ sessionId }) => {
+      try {
+        return await runApprovalManager(["get", sessionId || "default"]);
+      } catch (e: any) {
+        return { pending: null, error: e.message };
+      }
+    },
+
+    respondApproval: async ({ sessionId, choice, patternKeys }) => {
+      try {
+        return await runApprovalManager([
+          "respond",
+          sessionId || "default",
+          choice,
+          JSON.stringify(patternKeys || []),
+        ]);
+      } catch (e: any) {
+        return { ok: false, error: e.message };
       }
     },
 
@@ -1309,14 +1352,17 @@ try {
     port: HTTP_RPC_PORT,
     async fetch(req) {
         const url = new URL(req.url);
-        const corsHeaders = {
+        const baseHeaders = {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
+          "Referrer-Policy": "strict-origin-when-cross-origin",
         };
 
         if (req.method === "OPTIONS") {
-          return new Response(null, { status: 204, headers: corsHeaders });
+          return new Response(null, { status: 204, headers: baseHeaders });
         }
 
         // API proxy to Python backend
@@ -1325,9 +1371,9 @@ try {
           try {
             const proxyRes = await fetch(targetUrl, { method: req.method, headers: req.headers, body: req.body });
             const body = await proxyRes.arrayBuffer();
-            return new Response(body, { status: proxyRes.status, headers: { "Content-Type": proxyRes.headers.get("content-type") || "application/json", ...corsHeaders } });
+            return new Response(body, { status: proxyRes.status, headers: { "Content-Type": proxyRes.headers.get("content-type") || "application/json", ...baseHeaders } });
           } catch (e: any) {
-            return new Response(JSON.stringify({ error: e?.message || String(e) }), { status: 502, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: e?.message || String(e) }), { status: 502, headers: baseHeaders });
           }
         }
 
@@ -1341,22 +1387,22 @@ try {
               if (typeof handlerFn === "function") {
                 const result = await handlerFn(params);
                 return new Response(JSON.stringify({ type: "response", id, result }), {
-                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                  headers: { "Content-Type": "application/json", ...baseHeaders },
                 });
               }
               return new Response(
                 JSON.stringify({ type: "response", id, error: "Method not found" }),
-                { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
+                { status: 404, headers: { "Content-Type": "application/json", ...baseHeaders } }
               );
             }
             return new Response(JSON.stringify({ type: "response", id, error: "Invalid body" }), {
               status: 400,
-              headers: { "Content-Type": "application/json", ...corsHeaders },
+              headers: { "Content-Type": "application/json", ...baseHeaders },
             });
           } catch (e: any) {
             return new Response(
               JSON.stringify({ type: "response", error: e?.message || String(e) }),
-              { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+              { status: 500, headers: { "Content-Type": "application/json", ...baseHeaders } }
             );
           }
         }
@@ -1368,9 +1414,9 @@ try {
         }
         const file = Bun.file(target);
         if (await file.exists()) {
-          return new Response(file, { headers: { "Content-Type": mimeType(target), ...corsHeaders } });
+          return new Response(file, { headers: { "Content-Type": mimeType(target), ...baseHeaders } });
         }
-        return new Response("Not found", { status: 404, headers: corsHeaders });
+        return new Response("Not found", { status: 404, headers: baseHeaders });
       },
     });
   console.log("[HTTP Server] listening on http://127.0.0.1:", HTTP_RPC_PORT);

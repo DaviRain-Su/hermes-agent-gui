@@ -1282,6 +1282,47 @@ html, body {
   color: var(--accent);
 }
 
+.approval-card {
+  border: 1px solid var(--error);
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 10px 0;
+}
+.approval-title {
+  font-weight: 600;
+  color: var(--error);
+  margin-bottom: 6px;
+}
+.approval-command {
+  background: var(--bg-tertiary);
+  padding: 8px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.approval-actions button {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.approval-actions button.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 /* Todos */
 .todos-list {
   display: flex;
