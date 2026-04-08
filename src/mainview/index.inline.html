@@ -1652,13 +1652,28 @@ class MessageBlockBuilder {
     this.container.appendChild(el);
     this.blocks.push({ type: "tool", name, el });
   }
+  addSubagent(name) {
+    this._ensureThinkingRemoved();
+    const el = document.createElement("div");
+    el.className = "subagent-card running";
+    el.innerHTML = `
+      <div class="subagent-header" onclick="this.closest('.subagent-card').classList.toggle('open')">
+        <span class="subagent-label">Subagent</span>
+        <span class="subagent-title">${escapeHtml(name)}</span>
+        <span class="tool-call-arrow">▶</span>
+      </div>
+      <div class="subagent-body">Delegated task running via Hermes subagent.</div>
+    `;
+    this.container.appendChild(el);
+    this.blocks.push({ type: "subagent", name, el });
+  }
   completeTools() {
     this.blocks.forEach((b) => {
-      if (b.type === "tool") {
+      if (b.type === "tool" || b.type === "subagent") {
         b.el.classList.remove("running");
-        const body = b.el.querySelector(".tool-call-body");
+        const body = b.el.querySelector(b.type === "tool" ? ".tool-call-body" : ".subagent-body");
         if (body)
-          body.textContent = "Tool execution completed.";
+          body.textContent = b.type === "tool" ? "Tool execution completed." : "Subagent task completed.";
       }
     });
   }
@@ -1666,9 +1681,31 @@ class MessageBlockBuilder {
     const last = this.blocks[this.blocks.length - 1];
     if (!last || last.type !== "text")
       return;
-    const pattern = /(?:^|\n)`([\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}][^`]+)`\n/u;
+    const toolPattern = /(?:^|\n)`([\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}][^`]+)`\n/u;
+    const subagentPattern = /(?:^|\n)▶ Subagent:\s*([^\n]+)\n/;
     while (true) {
-      const match = last.content.match(pattern);
+      const toolMatch = last.content.match(toolPattern);
+      const subagentMatch = last.content.match(subagentPattern);
+      let match = null;
+      let type = "tool";
+      let captureIndex = 1;
+      if (toolMatch && subagentMatch) {
+        const tIdx = toolMatch.index ?? Infinity;
+        const sIdx = subagentMatch.index ?? Infinity;
+        if (tIdx <= sIdx) {
+          match = toolMatch;
+          type = "tool";
+        } else {
+          match = subagentMatch;
+          type = "subagent";
+        }
+      } else if (toolMatch) {
+        match = toolMatch;
+        type = "tool";
+      } else if (subagentMatch) {
+        match = subagentMatch;
+        type = "subagent";
+      }
       if (!match)
         break;
       const idx = match.index ?? 0;
@@ -1677,7 +1714,10 @@ class MessageBlockBuilder {
       const after = last.content.slice(idx + raw.length);
       last.content = before.replace(/\n+$/, "");
       last.el.innerHTML = formatContent(last.content);
-      this.addTool(match[1]);
+      if (type === "tool")
+        this.addTool(match[captureIndex]);
+      else
+        this.addSubagent(match[captureIndex].trim());
       const remaining = after.replace(/^\n+/, "");
       if (remaining) {
         const el = document.createElement("div");
@@ -1803,8 +1843,8 @@ function _postProcessInlineToolCodes(el) {
   const children = Array.from(el.children);
   children.forEach((child) => {
     if (child.tagName === "P") {
-      const pHtml = child.innerHTML;
-      const newHtml = pHtml.replace(/`([^`]+)`/g, (_, inner) => {
+      let pHtml = child.innerHTML;
+      pHtml = pHtml.replace(/`([^`]+)`/g, (_, inner) => {
         if (/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]/u.test(inner.trim())) {
           return `
               <div class="tool-call-card">
@@ -1818,8 +1858,21 @@ function _postProcessInlineToolCodes(el) {
         }
         return `<code>${escapeHtml(inner)}</code>`;
       });
-      if (newHtml !== pHtml)
-        child.innerHTML = newHtml;
+      pHtml = pHtml.replace(/▶ Subagent:\s*([^<\n]+)/g, (_, name) => {
+        const n = name.trim();
+        return `
+            <div class="subagent-card">
+              <div class="subagent-header" onclick="this.closest('.subagent-card').classList.toggle('open')">
+                <span class="subagent-label">Subagent</span>
+                <span class="subagent-title">${escapeHtml(n)}</span>
+                <span class="tool-call-arrow">▶</span>
+              </div>
+              <div class="subagent-body">Delegated task via Hermes subagent.</div>
+            </div>
+          `;
+      });
+      if (pHtml !== child.innerHTML)
+        child.innerHTML = pHtml;
     }
   });
 }

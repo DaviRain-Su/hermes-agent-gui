@@ -1334,6 +1334,67 @@ html, body {
   margin-right: 6px;
 }
 
+.subagent-card {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 8px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+
+.subagent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+.subagent-label {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.subagent-title {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.subagent-body {
+  display: none;
+  padding: 10px;
+  border-top: 1px solid rgba(139, 92, 246, 0.25);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.5;
+}
+
+.subagent-card.open .subagent-body {
+  display: block;
+}
+
+.subagent-card.running .subagent-header::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(139, 92, 246, 0.35);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 2px;
+}
+
 /* Attachments */
 .attachments {
   display: flex;
