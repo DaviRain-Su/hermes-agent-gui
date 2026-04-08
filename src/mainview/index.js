@@ -2123,12 +2123,101 @@ function setTheme(theme) {
     btn.classList.toggle("active", btn.dataset.theme === theme);
   });
 }
+function loadSnippets() {
+  try {
+    return JSON.parse(localStorage.getItem("hermes-prompt-snippets") || "[]");
+  } catch {
+    return [];
+  }
+}
+function saveSnippets(list) {
+  localStorage.setItem("hermes-prompt-snippets", JSON.stringify(list));
+}
+function renderSnippets() {
+  const container = $("#snippet-list");
+  if (!container)
+    return;
+  container.innerHTML = "";
+  const list = loadSnippets();
+  if (list.length === 0) {
+    container.innerHTML = `<div class="hint" style="font-size:12px;color:var(--text-secondary)">No snippets yet.</div>`;
+    return;
+  }
+  list.forEach((s, idx) => {
+    const row = document.createElement("div");
+    row.className = "snippet-item";
+    row.innerHTML = `<span>${escapeHtml(s.title)}</span><button data-idx="${idx}" title="Delete">✕</button>`;
+    row.querySelector("button")?.addEventListener("click", () => {
+      list.splice(idx, 1);
+      saveSnippets(list);
+      renderSnippets();
+    });
+    container.appendChild(row);
+  });
+}
+function addSnippet() {
+  const titleIn = $("#snippet-title");
+  const contentIn = $("#snippet-content");
+  if (!titleIn || !contentIn)
+    return;
+  const title = titleIn.value.trim();
+  const content = contentIn.value.trim();
+  if (!title || !content)
+    return;
+  const list = loadSnippets();
+  list.push({ title, content });
+  saveSnippets(list);
+  titleIn.value = "";
+  contentIn.value = "";
+  renderSnippets();
+}
+function showSnippetMenu() {
+  hideMentionMenu();
+  hideSlashMenu();
+  const existing = $(".snippet-menu");
+  if (existing) {
+    existing.remove();
+    return;
+  }
+  const input = $("#message-input");
+  if (!input)
+    return;
+  const list = loadSnippets();
+  if (list.length === 0) {
+    showToast("No snippets saved. Add them in Settings.");
+    return;
+  }
+  const rect = input.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.className = "snippet-menu slash-menu";
+  menu.style.cssText = `position:fixed;left:${rect.left}px;bottom:${window.innerHeight - rect.top + 4}px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:6px 0;z-index:1000;min-width:180px;box-shadow:0 8px 30px rgba(0,0,0,0.25);`;
+  list.forEach((s, idx) => {
+    const row = document.createElement("div");
+    row.className = "snippet-item-row slash-item" + (idx === 0 ? " active" : "");
+    row.style.cssText = "padding:8px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;";
+    row.innerHTML = `<span>${escapeHtml(s.title)}</span>`;
+    row.addEventListener("mouseenter", () => {
+      menu.querySelectorAll(".snippet-item-row").forEach((i) => i.classList.remove("active"));
+      row.classList.add("active");
+    });
+    row.addEventListener("click", () => {
+      input.value += (input.value && !input.value.endsWith(" ") ? " " : "") + s.content;
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+      menu.remove();
+      input.focus();
+    });
+    menu.appendChild(row);
+  });
+  document.body.appendChild(menu);
+}
 function openSettings() {
   $("#settings-overlay")?.classList.remove("hidden");
   const savedTheme = localStorage.getItem("hermes-theme") || "dark";
   $$(".theme-chip").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.theme === savedTheme);
   });
+  renderSnippets();
 }
 function closeSettings() {
   $("#settings-overlay")?.classList.add("hidden");
@@ -2527,11 +2616,17 @@ function initPage() {
       updateMentionMenu();
     });
     input.addEventListener("keydown", (e) => {
-      const slashMenu = $(".slash-menu:not(.mention-menu)");
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        showSnippetMenu();
+        return;
+      }
+      const snippetMenu = $(".snippet-menu");
       const mentionMenu = $(".mention-menu");
-      const menu = slashMenu || mentionMenu;
+      const slashMenu = $(".slash-menu");
+      const menu = snippetMenu || mentionMenu || slashMenu;
       if (menu) {
-        const selector = mentionMenu ? ".mention-item" : ".slash-item";
+        const selector = snippetMenu ? ".snippet-item-row" : mentionMenu ? ".mention-item" : ".slash-item";
         const items = Array.from(menu.querySelectorAll(selector));
         let active = items.findIndex((i) => i.classList.contains("active"));
         if (e.key === "ArrowDown") {
@@ -2555,6 +2650,7 @@ function initPage() {
         } else if (e.key === "Escape") {
           hideSlashMenu();
           hideMentionMenu();
+          $(".snippet-menu")?.remove();
         }
         return;
       }
@@ -2686,6 +2782,8 @@ function initPage() {
     $("#mobile-overlay")?.classList.remove("visible");
   });
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
+  $("#snippet-btn")?.addEventListener("click", showSnippetMenu);
+  $("#snippet-add-btn")?.addEventListener("click", addSnippet);
   $("#reply-cancel")?.addEventListener("click", cancelReply);
   $("#settings-btn")?.addEventListener("click", openSettings);
   $("#settings-close")?.addEventListener("click", closeSettings);

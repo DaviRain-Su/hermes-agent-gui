@@ -229,6 +229,7 @@
             placeholder="Ask anything... (Ctrl+K to focus)"
             autofocus
           ></textarea>
+          <button id="snippet-btn" class="icon-btn snippet-btn" title="Insert snippet" aria-label="Insert snippet">⚡</button>
           <button id="send-btn" class="send-btn" disabled>Send</button>
         </div>
         <div class="input-footer">
@@ -369,6 +370,15 @@
           </label>
         </div>
         <div class="setting-row">
+          <label>Prompt Snippets</label>
+          <div id="snippet-list" class="snippet-list"></div>
+          <div class="snippet-actions">
+            <input id="snippet-title" type="text" placeholder="Snippet title" />
+            <textarea id="snippet-content" rows="2" placeholder="Snippet content"></textarea>
+            <button id="snippet-add-btn" class="small-btn">Add Snippet</button>
+          </div>
+        </div>
+        <div class="setting-row">
           <label>Profile</label>
           <div id="profile-list" class="profile-list"></div>
           <div class="profile-actions">
@@ -402,6 +412,7 @@
         <div class="shortcut-row"><span class="shortcut-key">Ctrl/Cmd + Shift + H</span><span>Show / hide window</span></div>
         <div class="shortcut-row"><span class="shortcut-key">Enter</span><span>Send message</span></div>
         <div class="shortcut-row"><span class="shortcut-key">Shift + Enter</span><span>New line</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">Ctrl/Cmd + Shift + L</span><span>Insert prompt snippet</span></div>
         <div class="shortcut-row"><span class="shortcut-key">?</span><span>Open this cheatsheet</span></div>
         <div class="shortcut-row"><span class="shortcut-key">Esc</span><span>Close panel / cheatsheet</span></div>
       </div>
