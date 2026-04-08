@@ -1108,7 +1108,8 @@ function appendMessage(role, content, timestamp) {
   avatar.textContent = role === "user" ? "U" : "H";
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  if (timestamp) {
+  const showTimestamps = localStorage.getItem("hermes-show-timestamps") !== "0";
+  if (timestamp && showTimestamps) {
     const d = new Date(timestamp);
     const timeStr = isNaN(d.getTime()) ? String(timestamp) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const dateStr = isNaN(d.getTime()) ? "" : d.toLocaleDateString();
@@ -3114,6 +3115,17 @@ function initPage() {
       localStorage.setItem("hermes-sendkey", r.value);
     });
   });
+  const timestampsToggle = $("#toggle-timestamps");
+  if (timestampsToggle) {
+    timestampsToggle.checked = localStorage.getItem("hermes-show-timestamps") !== "0";
+    timestampsToggle.addEventListener("change", () => {
+      localStorage.setItem("hermes-show-timestamps", timestampsToggle.checked ? "1" : "0");
+      if (currentSessionId) {
+        const name = document.title.replace(" — Hermes Agent", "");
+        loadSessionMessages(currentSessionId, name || undefined);
+      }
+    });
+  }
   const tokenToggle = $("#toggle-token-usage");
   if (tokenToggle) {
     tokenToggle.checked = localStorage.getItem("hermes-token-usage") === "1";

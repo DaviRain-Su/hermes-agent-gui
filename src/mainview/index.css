@@ -1120,14 +1120,13 @@ html, body {
   right: 6px;
   font-size: 11px;
   color: var(--text-secondary);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.message:hover .message-meta {
   opacity: 1;
   pointer-events: auto;
+}
+
+.message.assistant .message-meta {
+  right: auto;
+  left: 6px;
 }
 
 .message-actions {
