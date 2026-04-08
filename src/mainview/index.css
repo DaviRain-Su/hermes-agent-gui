@@ -279,6 +279,18 @@ html, body {
   opacity: 0.6;
 }
 
+.session-item.dragging {
+  opacity: 0.4;
+}
+
+.drop-indicator {
+  height: 2px;
+  background: var(--accent);
+  margin: 3px 0;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
 .session-main {
   flex: 1;
   min-width: 0;

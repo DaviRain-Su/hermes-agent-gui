@@ -145,6 +145,7 @@ let workspacePath = "";
 let previewHasChanges = false;
 const activeApprovalCards = new Map<string, HTMLElement>();
 let activeReplyTo: { role: string; content: string } | null = null;
+let draggedSessionId: string | null = null;
 
 // ---------------------------------------------------------------------------
 // DOM Helpers
@@ -1046,6 +1047,20 @@ async function loadSessionHistory() {
         }
       }
       if (s.id === currentSessionId) el.classList.add("active");
+
+      if (!s.pinned) {
+        el.draggable = true;
+        el.addEventListener("dragstart", (e) => {
+          draggedSessionId = s.id;
+          el.classList.add("dragging");
+          e.dataTransfer?.setData("text/plain", s.id);
+        });
+        el.addEventListener("dragend", () => {
+          draggedSessionId = null;
+          el.classList.remove("dragging");
+          $$<HTMLElement>(".drop-indicator").forEach((i) => i.remove());
+        });
+      }
 
       const dateStr = s.updated_at ? new Date(s.updated_at).toLocaleDateString() : "";
       const tagChips = (s.tags || []).map((t: string) => `<span class="session-tag">#${escapeHtml(t)}</span>`).join("");
@@ -2423,6 +2438,18 @@ function showSnippetMenu() {
   document.body.appendChild(menu);
 }
 
+function getDragAfterElement(container: HTMLElement, y: number) {
+  const items = Array.from(container.querySelectorAll<HTMLElement>(".session-item:not(.dragging):not(.pinned)"));
+  return items.reduce<{ offset: number; el?: HTMLElement }>((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, el: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY }).el;
+}
+
 function openSettings() {
   $("#settings-overlay")?.classList.remove("hidden");
   const savedTheme = localStorage.getItem("hermes-theme") || "dark";
@@ -3142,6 +3169,47 @@ function initPage() {
       document.addEventListener("mouseup", onUp as any);
     });
   })();
+
+  // Session list drag-and-drop
+  const sessionsList = $("#sessions-list");
+  if (sessionsList) {
+    sessionsList.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!draggedSessionId) return;
+      const after = getDragAfterElement(sessionsList as HTMLElement, e.clientY);
+      let indicator = $(".drop-indicator");
+      if (!indicator) {
+        indicator = document.createElement("div");
+        indicator.className = "drop-indicator";
+      }
+      if (after) sessionsList.insertBefore(indicator, after);
+      else sessionsList.appendChild(indicator);
+    });
+    sessionsList.addEventListener("dragleave", (e) => {
+      if (e.relatedTarget && !(e.relatedTarget as HTMLElement).closest("#sessions-list")) {
+        $(".drop-indicator")?.remove();
+      }
+    });
+    sessionsList.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      $(".drop-indicator")?.remove();
+      if (!draggedSessionId) return;
+      const after = getDragAfterElement(sessionsList as HTMLElement, e.clientY);
+      const draggedEl = sessionsList.querySelector(`[data-id="${draggedSessionId}"]`) as HTMLElement | null;
+      if (draggedEl) {
+        if (after) sessionsList.insertBefore(draggedEl, after);
+        else sessionsList.appendChild(draggedEl);
+      }
+      const orderedIds = Array.from(sessionsList.querySelectorAll(".session-item")).map((el) => (el as HTMLElement).dataset.id).filter((id): id is string => !!id);
+      try {
+        await rpc.request.reorderSessions({ orderedIds });
+        await loadSessionHistory();
+      } catch (err: any) {
+        showToast("Reorder failed: " + (err.message || err));
+        await loadSessionHistory();
+      }
+    });
+  }
 
   // Panels in sidebar: tasks, todos, spaces, memory
   $("#tasks-panel")?.querySelector(".panel-header")?.addEventListener("click", () => {

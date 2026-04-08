@@ -646,7 +646,7 @@ listSessions: async () => {
         const rows = db.query("SELECT id, title, started_at as created_at, ended_at as updated_at, message_count FROM sessions ORDER BY updated_at DESC").all() as any[];
         db.close();
         const meta = await loadSessionMeta();
-        return rows.map((r) => {
+        const mapped = rows.map((r) => {
           const m = meta[r.id] || {};
           return {
             id: r.id,
@@ -659,12 +659,29 @@ listSessions: async () => {
             archived: !!m.archived,
             tags: m.tags || [],
             project_id: m.project_id || null,
+            order: m.order ?? 0,
           };
         });
+        mapped.sort((a, b) => {
+          const pinnedDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+          if (pinnedDiff !== 0) return pinnedDiff;
+          if (a.order !== b.order) return (b.order || 0) - (a.order || 0);
+          return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
+        });
+        return mapped;
       } catch (e: any) {
         console.error("listSessions failed:", e);
         return [];
       }
+    },
+
+    reorderSessions: async ({ orderedIds }: { orderedIds: string[] }) => {
+      const meta = await loadSessionMeta();
+      orderedIds.forEach((id, idx) => {
+        meta[id] = { ...(meta[id] || {}), order: (orderedIds.length - idx) * 1000 };
+      });
+      saveSessionMeta(meta);
+      return { success: true };
     },
 
     loadSession: async ({ sessionId }) => {
