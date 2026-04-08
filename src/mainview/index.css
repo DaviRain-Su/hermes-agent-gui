@@ -1042,6 +1042,11 @@ html, body {
   opacity: 1;
 }
 
+.message.assistant .message-actions {
+  left: auto;
+  right: 6px;
+}
+
 .message-actions button,
 .edit-btn,
 .cancel-btn {
@@ -1446,6 +1451,42 @@ html, body {
   padding: 12px 32px 20px;
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.reply-bar.hidden {
+  display: none;
+}
+
+.reply-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.reply-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
 }
 
 .input-box {

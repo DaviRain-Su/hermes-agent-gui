@@ -144,6 +144,7 @@ function getContextLimit(model: string): number {
 let workspacePath = "";
 let previewHasChanges = false;
 const activeApprovalCards = new Map<string, HTMLElement>();
+let activeReplyTo: { role: string; content: string } | null = null;
 
 // ---------------------------------------------------------------------------
 // DOM Helpers
@@ -1170,15 +1171,19 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
 
   wrapper.appendChild(avatar);
   wrapper.appendChild(meta);
+  const actions = document.createElement("div");
+  actions.className = "message-actions";
+  const replyBtn = document.createElement("button");
+  replyBtn.textContent = "Reply";
+  replyBtn.addEventListener("click", () => replyToMessage(wrapper));
+  actions.appendChild(replyBtn);
   if (role === "user") {
-    const actions = document.createElement("div");
-    actions.className = "message-actions";
     const editBtn = document.createElement("button");
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", () => editMessage(wrapper));
     actions.appendChild(editBtn);
-    wrapper.appendChild(actions);
   }
+  wrapper.appendChild(actions);
   if (role === "assistant") {
     const ttsBtn = document.createElement("button");
     ttsBtn.className = "tts-btn";
@@ -1810,6 +1815,16 @@ async function sendMessage() {
     text = text ? `${text}\n\n${attachText}` : attachText;
   }
 
+  // Prefix reply quote if active
+  if (activeReplyTo) {
+    const quote = activeReplyTo.content
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+    text = `${quote}\n\n${text}`;
+    cancelReply();
+  }
+
   // Add user message to UI and history
   appendMessage("user", text);
   conversation.push({ role: "user", content: text });
@@ -2315,6 +2330,37 @@ function exportToMarkdown() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function renderReplyBar() {
+  const bar = $("#reply-bar");
+  const preview = $("#reply-preview");
+  if (!bar || !preview) return;
+  if (activeReplyTo) {
+    bar.classList.remove("hidden");
+    const snippet = activeReplyTo.content.replace(/\s+/g, " ").trim().slice(0, 100);
+    preview.textContent = snippet || (activeReplyTo.role === "user" ? "User message" : "Assistant message");
+  } else {
+    bar.classList.add("hidden");
+    preview.textContent = "";
+  }
+}
+
+function replyToMessage(wrapper: HTMLElement) {
+  const messagesEl = $("#messages")!;
+  const all = Array.from(messagesEl.querySelectorAll(".message"));
+  const idx = all.indexOf(wrapper);
+  if (idx < 0 || idx >= conversation.length) return;
+  const msg = conversation[idx];
+  activeReplyTo = { role: msg.role, content: msg.content };
+  renderReplyBar();
+  const input = $("#message-input") as HTMLTextAreaElement | null;
+  input?.focus();
+}
+
+function cancelReply() {
+  activeReplyTo = null;
+  renderReplyBar();
 }
 
 // ---------------------------------------------------------------------------
@@ -2824,6 +2870,9 @@ function initPage() {
 
   // Chat header actions
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
+
+  // Reply bar
+  $("#reply-cancel")?.addEventListener("click", cancelReply);
 
   // Settings panel
   $("#settings-btn")?.addEventListener("click", openSettings);

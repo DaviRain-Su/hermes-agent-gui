@@ -100,6 +100,7 @@ function getContextLimit(model) {
 var workspacePath = "";
 var previewHasChanges = false;
 var activeApprovalCards = new Map;
+var activeReplyTo = null;
 var $ = (sel) => document.querySelector(sel);
 var $$ = (sel) => document.querySelectorAll(sel);
 window.$ = $;
@@ -1091,15 +1092,19 @@ function appendMessage(role, content, timestamp) {
   contentDiv.innerHTML = formatContent(content);
   wrapper.appendChild(avatar);
   wrapper.appendChild(meta);
+  const actions = document.createElement("div");
+  actions.className = "message-actions";
+  const replyBtn = document.createElement("button");
+  replyBtn.textContent = "Reply";
+  replyBtn.addEventListener("click", () => replyToMessage(wrapper));
+  actions.appendChild(replyBtn);
   if (role === "user") {
-    const actions = document.createElement("div");
-    actions.className = "message-actions";
     const editBtn = document.createElement("button");
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", () => editMessage(wrapper));
     actions.appendChild(editBtn);
-    wrapper.appendChild(actions);
   }
+  wrapper.appendChild(actions);
   if (role === "assistant") {
     const ttsBtn = document.createElement("button");
     ttsBtn.className = "tts-btn";
@@ -1613,6 +1618,15 @@ async function sendMessage() {
 
 ${attachText}` : attachText;
   }
+  if (activeReplyTo) {
+    const quote = activeReplyTo.content.split(`
+`).map((line) => `> ${line}`).join(`
+`);
+    text = `${quote}
+
+${text}`;
+    cancelReply();
+  }
   appendMessage("user", text);
   conversation.push({ role: "user", content: text });
   input.value = "";
@@ -2109,6 +2123,36 @@ function exportToMarkdown() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+function renderReplyBar() {
+  const bar = $("#reply-bar");
+  const preview = $("#reply-preview");
+  if (!bar || !preview)
+    return;
+  if (activeReplyTo) {
+    bar.classList.remove("hidden");
+    const snippet = activeReplyTo.content.replace(/\s+/g, " ").trim().slice(0, 100);
+    preview.textContent = snippet || (activeReplyTo.role === "user" ? "User message" : "Assistant message");
+  } else {
+    bar.classList.add("hidden");
+    preview.textContent = "";
+  }
+}
+function replyToMessage(wrapper) {
+  const messagesEl = $("#messages");
+  const all = Array.from(messagesEl.querySelectorAll(".message"));
+  const idx = all.indexOf(wrapper);
+  if (idx < 0 || idx >= conversation.length)
+    return;
+  const msg = conversation[idx];
+  activeReplyTo = { role: msg.role, content: msg.content };
+  renderReplyBar();
+  const input = $("#message-input");
+  input?.focus();
+}
+function cancelReply() {
+  activeReplyTo = null;
+  renderReplyBar();
+}
 var onboardingResolved = false;
 var installLogBuffer = "";
 function showOverlay() {
@@ -2590,6 +2634,7 @@ function initPage() {
     $("#mobile-overlay")?.classList.remove("visible");
   });
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
+  $("#reply-cancel")?.addEventListener("click", cancelReply);
   $("#settings-btn")?.addEventListener("click", openSettings);
   $("#settings-close")?.addEventListener("click", closeSettings);
   $("#settings-overlay")?.addEventListener("click", (e) => {
