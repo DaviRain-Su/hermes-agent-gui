@@ -1016,7 +1016,8 @@ async function loadSessionHistory() {
     console.error("Failed to load sessions:", e);
   }
 }
-async function loadSessionMessages(sessionId, displayName) {
+var MAX_INITIAL_MESSAGES = 100;
+async function loadSessionMessages(sessionId, displayName, showAll = false) {
   try {
     const messages = await rpc.request.loadSession({ sessionId });
     currentSessionId = sessionId;
@@ -1036,7 +1037,22 @@ async function loadSessionMessages(sessionId, displayName) {
       `;
       return;
     }
-    conversation.forEach((msg) => {
+    let start = 0;
+    let showLoadMore = false;
+    if (!showAll && conversation.length > MAX_INITIAL_MESSAGES) {
+      start = conversation.length - MAX_INITIAL_MESSAGES;
+      showLoadMore = true;
+    }
+    if (showLoadMore) {
+      const loadMore = document.createElement("div");
+      loadMore.className = "load-more";
+      loadMore.innerHTML = `<button class="small-btn">Load older messages (${start} hidden)</button>`;
+      loadMore.querySelector("button")?.addEventListener("click", () => {
+        loadSessionMessages(sessionId, displayName, true);
+      });
+      messagesEl.appendChild(loadMore);
+    }
+    conversation.slice(start).forEach((msg) => {
       const ts = msg.created_at || msg.timestamp || undefined;
       const contentDiv = appendMessage(msg.role, msg.content || "", ts);
       if (msg.reasoning)

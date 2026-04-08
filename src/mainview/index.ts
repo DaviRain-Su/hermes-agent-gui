@@ -1083,7 +1083,9 @@ async function loadSessionHistory() {
   }
 }
 
-async function loadSessionMessages(sessionId: string, displayName?: string) {
+const MAX_INITIAL_MESSAGES = 100;
+
+async function loadSessionMessages(sessionId: string, displayName?: string, showAll = false) {
   try {
     const messages = await rpc.request.loadSession({ sessionId });
     currentSessionId = sessionId;
@@ -1107,7 +1109,24 @@ async function loadSessionMessages(sessionId: string, displayName?: string) {
       return;
     }
 
-    conversation.forEach((msg) => {
+    let start = 0;
+    let showLoadMore = false;
+    if (!showAll && conversation.length > MAX_INITIAL_MESSAGES) {
+      start = conversation.length - MAX_INITIAL_MESSAGES;
+      showLoadMore = true;
+    }
+
+    if (showLoadMore) {
+      const loadMore = document.createElement("div");
+      loadMore.className = "load-more";
+      loadMore.innerHTML = `<button class="small-btn">Load older messages (${start} hidden)</button>`;
+      loadMore.querySelector("button")?.addEventListener("click", () => {
+        loadSessionMessages(sessionId, displayName, true);
+      });
+      messagesEl.appendChild(loadMore);
+    }
+
+    conversation.slice(start).forEach((msg) => {
       const ts = msg.created_at || msg.timestamp || undefined;
       const contentDiv = appendMessage(msg.role as any, msg.content || "", ts);
       if (msg.reasoning) renderThinkingCard(contentDiv, msg.reasoning);
