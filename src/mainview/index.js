@@ -1601,7 +1601,7 @@ ${attachText}` : attachText;
   const targetSessionId = currentSessionId || "new";
   activeStreamController = new AbortController;
   sendBtn.disabled = true;
-  sendBtn.textContent = "...";
+  sendBtn.classList.add("loading");
   const messagesEl = $("#messages");
   const wrapper = document.createElement("div");
   wrapper.className = "message assistant";
@@ -1612,7 +1612,11 @@ ${attachText}` : attachText;
   contentDiv.className = "message-content";
   const thinking = document.createElement("div");
   thinking.className = "thinking";
-  thinking.innerHTML = `<span>Thinking...</span><button class="cancel-btn">Cancel</button>`;
+  thinking.innerHTML = `
+    <span class="thinking-dots"><span></span><span></span><span></span></span>
+    <span class="thinking-text">Thinking</span>
+    <button class="cancel-btn">Cancel</button>
+  `;
   thinking.querySelector(".cancel-btn")?.addEventListener("click", () => {
     activeStreamController?.abort();
   });
@@ -1643,7 +1647,7 @@ ${attachText}` : attachText;
     clearTimeout(fetchTimeout);
     activeStreamController = null;
     sendBtn.disabled = false;
-    sendBtn.textContent = "Send";
+    sendBtn.classList.remove("loading");
     updateTokenUsageDisplay();
   }
 }
