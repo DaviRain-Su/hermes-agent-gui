@@ -1,5 +1,3 @@
-import { Electroview, type RPCSchema } from "electrobun/view";
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -24,47 +22,41 @@ interface SetupFieldDef {
 }
 
 // ---------------------------------------------------------------------------
-// RPC Schema
+// Simple HTTP-RPC client
 // ---------------------------------------------------------------------------
-type AppRPCSchema = {
-  bun: RPCSchema<{
-    requests: {
-      detectInstallation: { params: {}; response: { installed: boolean; path?: string } };
-      startInstallation: { params: { confirm: boolean }; response: { success: boolean; errorMessage?: string } };
-      cancelInstallation: { params: {}; response: { success: boolean } };
-      getSetupFields: { params: {}; response: { fields: SetupFieldDef[]; values: Record<string, string> } };
-      submitSetupConfig: { params: Record<string, string>; response: { success: boolean; errors?: { fieldId: string; message: string }[] } };
-      openExternal: { params: { url: string }; response: void };
-      navigateTo: { params: { url: string }; response: void };
-    };
-    messages: {
-      installStatus: InstallStatusPayload;
-      installLog: { stream: "stdout" | "stderr"; text: string };
-    };
-  }>;
-  webview: RPCSchema<{
-    requests: {};
-    messages: {};
-  }>;
-};
+const RPC_ENDPOINT = "http://127.0.0.1:55000/rpc";
+let rpcReqId = 0;
 
-const rpc = Electroview.defineRPC<AppRPCSchema>({
-  maxRequestTime: 60000,
-  handlers: {
-    requests: {},
-    messages: {
-      installStatus: (status: InstallStatusPayload) => handleInstallStatus(status),
-      installLog: (msg: { stream: "stdout" | "stderr"; text: string }) => appendInstallLog(msg),
+async function rpcRequest(method: string, params?: any): Promise<any> {
+  const id = ++rpcReqId;
+  const res = await fetch(RPC_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "request", id, method, params: params ?? {} }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = await res.json();
+  if (body.error) throw new Error(body.error);
+  return body.result;
+}
+
+const rpc = {
+  request: new Proxy({} as any, {
+    get: (_target, prop) => {
+      return (params: any) => rpcRequest(String(prop), params);
     },
+  }),
+  send: {
+    installStatus: (status: InstallStatusPayload) => handleInstallStatus(status),
+    installLog: (msg: { stream: "stdout" | "stderr"; text: string }) => appendInstallLog(msg),
   },
-});
-
-new Electroview({ rpc });
+};
 
 // ---------------------------------------------------------------------------
 // DOM Helpers
 // ---------------------------------------------------------------------------
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null;
+(window as any).$ = $;
 const escapeHtml = (text: string) => {
   const div = document.createElement("div");
   div.textContent = text;
@@ -88,8 +80,7 @@ function showPanel(phase: InstallStatusPayload["phase"]) {
   }
 
   if (phase === "ready") {
-    // Ask Bun process to navigate to main chat view
-    rpc.request.navigateTo({ url: "views://mainview/index.html" });
+    location.href = "/index.html";
   }
 }
 

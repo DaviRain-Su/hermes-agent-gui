@@ -1,17 +1,62 @@
 {
   "name": "hermes-agent-gui",
   "version": "0.1.0",
-  "description": "Desktop GUI for Hermes Agent using ElectroBun",
+  "description": "Desktop GUI for Hermes Agent using Electron",
+  "author": "Hermes Team <dev@davirain.hermes-agent-gui>",
+  "main": "electron/main.js",
   "scripts": {
-    "dev": "electrobun dev",
-    "build": "electrobun build",
-    "start": "bun run build && bun run dev"
+    "dev": "bun run build:views && npx electron .",
+    "build": "bun run build:views",
+    "build:views": "bun run scripts/inline-views.ts",
+    "start": "npx electron .",
+    "dist": "bun run build && npx electron-builder"
+  },
+  "build": {
+    "appId": "dev.davirain.hermes-agent-gui",
+    "productName": "Hermes Agent",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "src/backend-service.ts",
+      "src/mainview/**/*",
+      "src/bun/**/*",
+      "python/**/*",
+      "scripts/**/*",
+      "package.json",
+      "bun.lock"
+    ],
+    "asarUnpack": [
+      "src/**/*",
+      "python/**/*",
+      "scripts/**/*"
+    ],
+    "electronDist": "node_modules/electron/dist",
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility"
+    }
   },
   "dependencies": {
-    "electrobun": "1.17.3-beta.9",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "electron": "^41.1.1",
+    "electron-builder": "^24.13.3"
   }
 }

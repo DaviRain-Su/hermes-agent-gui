@@ -18,9 +18,9 @@ export default {
       },
     },
     copy: {
-      "src/mainview/index.html": "views/mainview/index.html",
+      "src/mainview/index.inline.html": "views/mainview/index.html",
       "src/mainview/index.css": "views/mainview/index.css",
-      "src/mainview/setup.html": "views/setup/setup.html",
+      "src/mainview/setup.inline.html": "views/setup/setup.html",
       "src/mainview/setup.css": "views/setup/setup.css",
       "python": "python",
     },

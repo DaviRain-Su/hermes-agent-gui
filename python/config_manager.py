@@ -56,6 +56,38 @@ def cmd_set_model():
     if provider:
         cfg["model"]["provider"] = provider
     _save_yaml(cfg)
+
+    # Sync to .env for consistency with setup wizard
+    env_path = HERMES_HOME / ".env"
+    env_lines = []
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as f:
+            env_lines = f.readlines()
+
+    env_map = {}
+    for line in env_lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            env_map[k] = v
+
+    env_map["HERMES_MODEL"] = model
+    if provider:
+        env_map["HERMES_PROVIDER"] = provider
+    env_map.setdefault("GATEWAY_ALLOW_ALL_USERS", "true")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write("# Hermes Agent GUI environment\n")
+        for k, v in env_map.items():
+            f.write(f"{k}={v}\n")
+    try:
+        import os
+        os.chmod(env_path, 0o600)
+    except Exception:
+        pass
+
     print(json.dumps({"success": True, "model": model, "provider": provider}))
 
 

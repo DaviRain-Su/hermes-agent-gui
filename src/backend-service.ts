@@ -2,27 +2,22 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import { type Subprocess, spawn } from "bun";
-import Electrobun, {
-  ApplicationMenu,
-  BrowserView,
-  BrowserWindow,
-  type RPCSchema,
-  Utils,
-} from "electrobun/bun";
+import { Database } from "bun:sqlite";
+import { readdirSync, statSync } from "node:fs";
 import {
   detectInstallation,
   startInstallation as runInstallation,
   cancelInstallation,
   type InstallErrorCode,
   type StartInstallationResult,
-} from "./installer";
+} from "./bun/installer";
 import {
   checkNeedsConfig,
   getSetupFields,
   submitSetupConfig,
   type SetupFieldDef,
   type SubmitSetupResult,
-} from "./setup";
+} from "./bun/setup";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -47,7 +42,6 @@ const HERMES_SEARCH_PATHS = [
 // ---------------------------------------------------------------------------
 let backendProcess: Subprocess | null = null;
 let backendReady = false;
-let mainWindowRef: BrowserWindow | null = null;
 let hermesDir = "";
 let pythonPath = "";
 
@@ -385,51 +379,67 @@ async function stopBackend(): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // RPC Schema
-// ---------------------------------------------------------------------------
-type AppRPCSchema = {
-  bun: RPCSchema<{
-    requests: {
-      // Existing
-      getBackendStatus: { params: {}; response: BackendStatus };
-      restartBackend: { params: {}; response: BackendStatus };
-      getCurrentModel: { params: {}; response: { model: string; provider: string } };
-      setModel: { params: { model: string; provider?: string }; response: { success: boolean; needsRestart: boolean } };
-      listSessions: { params: {}; response: SessionSummary[] };
-      loadSession: { params: { sessionId: string }; response: ChatMessage[] };
-      saveFileUpload: { params: { name: string; dataBase64: string }; response: { success: boolean; path: string } };
-      openExternal: { params: { url: string }; response: void };
-      navigateTo: { params: { url: string }; response: void };
-      // New installer / setup
-      detectInstallation: { params: {}; response: DetectInstallationResult };
-      startInstallation: { params: { confirm: boolean }; response: StartInstallationResult };
-      cancelInstallation: { params: {}; response: { success: boolean } };
-      getInstallStatus: { params: {}; response: InstallStatusPayload };
-      getSetupFields: { params: {}; response: { fields: SetupFieldDef[]; values: Record<string, string> } };
-      submitSetupConfig: { params: Record<string, string>; response: SubmitSetupResult };
-      // Skills
-      listSkills: { params: {}; response: { categories?: string[]; skills: any[] } };
-      getSkillDetail: { params: { name: string }; response: any };
-      getSkillCommands: { params: {}; response: Record<string, { name: string; description: string; skill_md_path: string; skill_dir: string }> };
-      installSkill: { params: { identifier: string }; response: { success: boolean; error?: string; skill?: any } };
-      updateSkill: { params: { name?: string }; response: { success: boolean; error?: string } };
-      uninstallSkill: { params: { name: string }; response: { success: boolean; error?: string } };
-      enableSkill: { params: { name: string }; response: { success: boolean; error?: string } };
-      disableSkill: { params: { name: string }; response: { success: boolean; error?: string } };
-    };
-    messages: {};
-  }>;
-  webview: RPCSchema<{
-    requests: {};
-    messages: {
-      backendStatus: BackendStatus;
-      backendLog: { stream: "stdout" | "stderr"; text: string };
-      installStatus: InstallStatusPayload;
-      installLog: { stream: "stdout" | "stderr"; text: string };
-    };
-  }>;
-};
 
-const rpcHandlers: AppRPCSchema["bun"]["handlers"] = {
+// ---------------------------------------------------------------------------
+// Extended helpers for new features
+// ---------------------------------------------------------------------------
+const HERMES_HOME = join(homedir(), ".hermes");
+const GUI_SESSIONS_DIR = join(homedir(), ".hermes-agent-gui", "sessions");
+const GUI_SESSION_META = join(GUI_SESSIONS_DIR, "session_meta.json");
+const CRON_JOBS_FILE = join(HERMES_HOME, "cron", "jobs.json");
+const MEMORY_FILE = join(HERMES_HOME, "memory", "MEMORY.md");
+const PROFILES_DIR = join(HERMES_HOME, "profiles");
+
+function getStateDb(): Database {
+  return new Database(join(HERMES_HOME, "state.db"));
+}
+
+async function readJsonAsync<T = any>(path: string, fallback: T): Promise<T> {
+  try {
+    const text = await Bun.file(path).text();
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadSessionMeta(): Promise<Record<string, any>> {
+  return readJsonAsync(GUI_SESSION_META, {});
+}
+
+function saveSessionMeta(meta: Record<string, any>) {
+  ensureDir(GUI_SESSIONS_DIR);
+  writeFileSync(GUI_SESSION_META, JSON.stringify(meta, null, 2));
+}
+
+async function runHermesCliProfile(args: string[]): Promise<any> {
+  const proc = spawn({
+    cmd: ["python3", "-m", "hermes_cli.main", "profile", ...args],
+    cwd: hermesDir || process.cwd(),
+    env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const reader = proc.stdout?.getReader();
+  let out = "";
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += new TextDecoder().decode(value);
+    }
+  }
+  try {
+    return JSON.parse(out);
+  } catch {
+    return { raw: out.trim() };
+  }
+}
+
+// ---------------------------------------------------------------------------
+type RPCRequestHandler = (params: any) => Promise<any>;
+
+const rpcHandlers: { requests: Record<string, RPCRequestHandler> } = {
   requests: {
     getBackendStatus: async () => ({
       running: backendReady,
@@ -469,9 +479,26 @@ const rpcHandlers: AppRPCSchema["bun"]["handlers"] = {
       }
     },
 
-    listSessions: async () => {
+listSessions: async () => {
       try {
-        return await runConfigManager(["list-sessions"]);
+        const db = getStateDb();
+        const rows = db.query("SELECT id, title, started_at as created_at, ended_at as updated_at, message_count FROM sessions ORDER BY updated_at DESC").all() as any[];
+        db.close();
+        const meta = await loadSessionMeta();
+        return rows.map((r) => {
+          const m = meta[r.id] || {};
+          return {
+            id: r.id,
+            key: r.id,
+            display_name: m.display_name || r.title || r.id.slice(0, 8),
+            updated_at: r.updated_at ? new Date(r.updated_at * 1000).toISOString() : "",
+            created_at: r.created_at ? new Date(r.created_at * 1000).toISOString() : "",
+            message_count: r.message_count || 0,
+            pinned: !!m.pinned,
+            archived: !!m.archived,
+            tags: m.tags || [],
+          };
+        });
       } catch (e: any) {
         console.error("listSessions failed:", e);
         return [];
@@ -480,10 +507,224 @@ const rpcHandlers: AppRPCSchema["bun"]["handlers"] = {
 
     loadSession: async ({ sessionId }) => {
       try {
-        return await runConfigManager(["load-session", sessionId]);
+        const db = getStateDb();
+        const rows = db.query("SELECT role, content, timestamp, reasoning FROM messages WHERE session_id = ? ORDER BY timestamp").all(sessionId) as any[];
+        db.close();
+        return rows.map((r) => ({
+          role: r.role,
+          content: r.content || "",
+          created_at: r.timestamp ? new Date(r.timestamp * 1000).toISOString() : "",
+          reasoning: r.reasoning || undefined,
+        }));
       } catch (e: any) {
         console.error("loadSession failed:", e);
         return [];
+      }
+    },
+
+    renameSession: async ({ sessionId, name }) => {
+      const meta = await loadSessionMeta();
+      meta[sessionId] = { ...(meta[sessionId] || {}), display_name: name };
+      saveSessionMeta(meta);
+      try {
+        const db = getStateDb();
+        db.query("UPDATE sessions SET title = ? WHERE id = ?").run(name, sessionId);
+        db.close();
+      } catch {}
+      return { success: true };
+    },
+
+    deleteSession: async ({ sessionId }) => {
+      try {
+        const db = getStateDb();
+        db.query("DELETE FROM messages WHERE session_id = ?").run(sessionId);
+        db.query("DELETE FROM sessions WHERE id = ?").run(sessionId);
+        db.close();
+      } catch (e) { console.error(e); }
+      const meta = await loadSessionMeta();
+      delete meta[sessionId];
+      saveSessionMeta(meta);
+      const jsonl = join(GUI_SESSIONS_DIR, sessionId + ".jsonl");
+      try { if (existsSync(jsonl)) require("node:fs").unlinkSync(jsonl); } catch {}
+      return { success: true };
+    },
+
+    pinSession: async ({ sessionId, pinned }) => {
+      const meta = await loadSessionMeta();
+      meta[sessionId] = { ...(meta[sessionId] || {}), pinned };
+      saveSessionMeta(meta);
+      return { success: true };
+    },
+
+    archiveSession: async ({ sessionId, archived }) => {
+      const meta = await loadSessionMeta();
+      meta[sessionId] = { ...(meta[sessionId] || {}), archived };
+      saveSessionMeta(meta);
+      return { success: true };
+    },
+
+    tagSession: async ({ sessionId, tags }) => {
+      const meta = await loadSessionMeta();
+      meta[sessionId] = { ...(meta[sessionId] || {}), tags: Array.isArray(tags) ? tags : [tags] };
+      saveSessionMeta(meta);
+      return { success: true };
+    },
+
+    listCron: async () => {
+      try {
+        const data = await readJsonAsync<any>(CRON_JOBS_FILE, { jobs: [] });
+        return { jobs: data.jobs || [] };
+      } catch {
+        return { jobs: [] };
+      }
+    },
+
+    runCron: async ({ jobId }) => {
+      // Best-effort: trigger via CLI is tricky; return placeholder
+      return { success: false, error: "Manual trigger not supported in GUI yet." };
+    },
+
+    deleteCron: async ({ jobId }) => {
+      try {
+        const data = await readJsonAsync<any>(CRON_JOBS_FILE, { jobs: [] });
+        data.jobs = (data.jobs || []).filter((j: any) => j.id !== jobId && j.job_id !== jobId);
+        ensureDir(join(HERMES_HOME, "cron"));
+        writeFileSync(CRON_JOBS_FILE, JSON.stringify(data, null, 2));
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    getMemory: async () => {
+      try {
+        ensureDir(join(HERMES_HOME, "memory"));
+        const text = await Bun.file(MEMORY_FILE).text();
+        return { content: text, path: MEMORY_FILE };
+      } catch {
+        return { content: "", path: MEMORY_FILE };
+      }
+    },
+
+    saveMemory: async ({ content }) => {
+      try {
+        ensureDir(join(HERMES_HOME, "memory"));
+        writeFileSync(MEMORY_FILE, content, "utf-8");
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    listProfiles: async () => {
+      try {
+        const proc = spawn({
+          cmd: ["python3", "-m", "hermes_cli.main", "profile", "list"],
+          cwd: hermesDir || process.cwd(),
+          env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const reader = proc.stdout?.getReader();
+        let out = "";
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            out += new TextDecoder().decode(value);
+          }
+        }
+        // Parse lines like "  default   [active]"
+        const profiles: any[] = [];
+        for (const line of out.split("\n")) {
+          const m = line.match(/^\s+([\w-]+)(.*)$/);
+          if (m) {
+            profiles.push({ name: m[1], active: m[2].includes("active") });
+          }
+        }
+        return { profiles };
+      } catch {
+        return { profiles: [] };
+      }
+    },
+
+    switchProfile: async ({ name }) => {
+      try {
+        const proc = spawn({
+          cmd: ["python3", "-m", "hermes_cli.main", "profile", "use", name],
+          cwd: hermesDir || process.cwd(),
+          env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        await proc.exited;
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    createProfile: async ({ name, cloneFrom }) => {
+      try {
+        const args = ["create", name];
+        if (cloneFrom) args.push("--clone-from", cloneFrom);
+        const proc = spawn({
+          cmd: ["python3", "-m", "hermes_cli.main", "profile", ...args],
+          cwd: hermesDir || process.cwd(),
+          env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        await proc.exited;
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    deleteProfile: async ({ name }) => {
+      try {
+        const proc = spawn({
+          cmd: ["python3", "-m", "hermes_cli.main", "profile", "delete", name, "-y"],
+          cwd: hermesDir || process.cwd(),
+          env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        await proc.exited;
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    renameProfile: async ({ oldName, newName }) => {
+      try {
+        const proc = spawn({
+          cmd: ["python3", "-m", "hermes_cli.main", "profile", "rename", oldName, newName],
+          cwd: hermesDir || process.cwd(),
+          env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        await proc.exited;
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    listWorkspace: async ({ path: basePath }) => {
+      const dir = basePath || HERMES_HOME;
+      try {
+        const entries = readdirSync(dir).map((name) => {
+          const full = join(dir, name);
+          const s = statSync(full);
+          return { name, path: full, isDirectory: s.isDirectory() };
+        });
+        return { entries };
+      } catch (e: any) {
+        return { entries: [], error: e.message };
       }
     },
 
@@ -669,61 +910,96 @@ const rpcHandlers: AppRPCSchema["bun"]["handlers"] = {
   messages: {},
 };
 
-const rpc = BrowserView.defineRPC<AppRPCSchema>({
-  maxRequestTime: 60000,
-  handlers: rpcHandlers,
-});
+// ---------------------------------------------------------------------------
+// Static + RPC HTTP server (serves frontend and handles RPC for PyQt shell)
+// ---------------------------------------------------------------------------
+const WEB_DIR = join(process.cwd(), "src", "mainview");
 
-// ---------------------------------------------------------------------------
-// HTTP RPC fallback server (Linux dev workaround for broken WebSocket bridge)
-// ---------------------------------------------------------------------------
-let HTTP_RPC_PORT = 0;
-for (let port = 55000; port <= 55010; port++) {
-  try {
-    Bun.serve({
-      port,
-      async fetch(req) {
+function mimeType(pathname: string): string {
+  if (pathname.endsWith(".html")) return "text/html";
+  if (pathname.endsWith(".js")) return "application/javascript";
+  if (pathname.endsWith(".css")) return "text/css";
+  if (pathname.endsWith(".json")) return "application/json";
+  if (pathname.endsWith(".svg")) return "image/svg+xml";
+  if (pathname.endsWith(".png")) return "image/png";
+  if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg";
+  return "application/octet-stream";
+}
+
+const HTTP_RPC_PORT = 55000;
+try {
+  Bun.serve({
+    port: HTTP_RPC_PORT,
+    async fetch(req) {
         const url = new URL(req.url);
-        if (url.pathname !== "/rpc" || req.method !== "POST") {
-          return new Response("Not found", { status: 404 });
+        const corsHeaders = {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        };
+
+        if (req.method === "OPTIONS") {
+          return new Response(null, { status: 204, headers: corsHeaders });
         }
-        try {
-          const body = (await req.json()) as any;
-          const { type, id, method, params } = body;
-          if (type === "request" && method) {
-            const handlerFn = (rpcHandlers.requests as any)[method];
-            if (typeof handlerFn === "function") {
-              const result = await handlerFn(params);
-              return new Response(JSON.stringify({ type: "response", id, result }), {
-                headers: { "Content-Type": "application/json" },
-              });
+
+        // API proxy to Python backend
+        if (url.pathname.startsWith("/api/")) {
+          const targetUrl = `http://127.0.0.1:${BACKEND_PORT}${url.pathname.replace("/api", "")}${url.search}`;
+          try {
+            const proxyRes = await fetch(targetUrl, { method: req.method, headers: req.headers, body: req.body });
+            const body = await proxyRes.arrayBuffer();
+            return new Response(body, { status: proxyRes.status, headers: { "Content-Type": proxyRes.headers.get("content-type") || "application/json", ...corsHeaders } });
+          } catch (e: any) {
+            return new Response(JSON.stringify({ error: e?.message || String(e) }), { status: 502, headers: corsHeaders });
+          }
+        }
+
+        // RPC endpoint
+        if (url.pathname === "/rpc" && req.method === "POST") {
+          try {
+            const body = (await req.json()) as any;
+            const { type, id, method, params } = body;
+            if (type === "request" && method) {
+              const handlerFn = (rpcHandlers.requests as any)[method];
+              if (typeof handlerFn === "function") {
+                const result = await handlerFn(params);
+                return new Response(JSON.stringify({ type: "response", id, result }), {
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                });
+              }
+              return new Response(
+                JSON.stringify({ type: "response", id, error: "Method not found" }),
+                { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
+              );
             }
+            return new Response(JSON.stringify({ type: "response", id, error: "Invalid body" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            });
+          } catch (e: any) {
             return new Response(
-              JSON.stringify({ type: "response", id, error: "Method not found" }),
-              { status: 404, headers: { "Content-Type": "application/json" } }
+              JSON.stringify({ type: "response", error: e?.message || String(e) }),
+              { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
             );
           }
-          return new Response(JSON.stringify({ type: "response", id, error: "Invalid body" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          });
-        } catch (e: any) {
-          return new Response(
-            JSON.stringify({ type: "response", error: e?.message || String(e) }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          );
         }
+
+        // Static files
+        let target = join(WEB_DIR, url.pathname === "/" ? "index.html" : url.pathname);
+        if (!existsSync(target)) {
+          target = join(WEB_DIR, "index.html");
+        }
+        const file = Bun.file(target);
+        if (await file.exists()) {
+          return new Response(file, { headers: { "Content-Type": mimeType(target), ...corsHeaders } });
+        }
+        return new Response("Not found", { status: 404, headers: corsHeaders });
       },
     });
-    HTTP_RPC_PORT = port;
-    console.log("[HTTP-RPC] fallback server listening on port", port);
-    break;
-  } catch {
-    // try next port
-  }
-}
-if (!HTTP_RPC_PORT) {
-  console.error("[HTTP-RPC] failed to start fallback server: no free port in range 55000-55010");
+  console.log("[HTTP Server] listening on http://127.0.0.1:", HTTP_RPC_PORT);
+} catch (e: any) {
+  console.error("[HTTP Server] failed to start on port 55000:", e?.message || String(e));
+  process.exit(1);
 }
 
 // ---------------------------------------------------------------------------

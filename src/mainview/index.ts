@@ -1,5 +1,3 @@
-import { Electroview, type RPCSchema } from "electrobun/view";
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -30,65 +28,67 @@ interface Attachment {
 }
 
 // ---------------------------------------------------------------------------
-// RPC Schema
+// Simple HTTP-RPC client (replaces Electroview for Tauri/Linux compatibility)
 // ---------------------------------------------------------------------------
-type AppRPCSchema = {
-  bun: RPCSchema<{
-    requests: {
-      getBackendStatus: { params: {}; response: BackendStatus };
-      restartBackend: { params: {}; response: BackendStatus };
-      getCurrentModel: { params: {}; response: { model: string; provider: string } };
-      setModel: { params: { model: string; provider?: string }; response: { success: boolean; needsRestart: boolean } };
-      listSessions: { params: {}; response: SessionSummary[] };
-      loadSession: { params: { sessionId: string }; response: ChatMessage[] };
-      saveFileUpload: { params: { name: string; dataBase64: string }; response: { success: boolean; path: string } };
-      openExternal: { params: { url: string }; response: void };
-      detectInstallation: { params: {}; response: { installed: boolean; path?: string } };
-      startInstallation: { params: { confirm: boolean }; response: { started: boolean; error?: any } };
-      cancelInstallation: { params: {}; response: { cancelled: boolean } };
-      getInstallStatus: { params: {}; response: { state: string; progress?: number; error?: any } };
-      getSetupFields: { params: {}; response: any[] };
-      submitSetupConfig: { params: { values: Record<string, string> }; response: { success: boolean; errors?: any[] } };
-    };
-    messages: {};
-  }>;
-  webview: RPCSchema<{
-    requests: {};
-    messages: {
-      backendStatus: BackendStatus;
-      backendLog: { stream: "stdout" | "stderr"; text: string };
-      installStatus: { state: string; progress?: number; error?: any };
-      installLog: { stream: "stdout" | "stderr"; text: string };
-    };
-  }>;
-};
+const RPC_ENDPOINT = "http://127.0.0.1:55000/rpc";
+let rpcReqId = 0;
 
-const rpc = Electroview.defineRPC<AppRPCSchema>({
-  maxRequestTime: 60000,
-  handlers: {
-    requests: {},
-    messages: {
-      backendStatus: (status: BackendStatus) => {
-        updateBackendStatusUI(status);
-        if (status.running && !backendUrl) {
-          backendUrl = status.url;
-          initAfterBackendReady();
-        }
-      },
-      backendLog: (msg: { stream: "stdout" | "stderr"; text: string }) => {
-        console.log(`[Backend ${msg.stream}]`, msg.text);
-      },
-      installStatus: (status: { state: string; progress?: number; error?: any }) => {
-        handleInstallStatus(status);
-      },
-      installLog: (msg: { stream: "stdout" | "stderr"; text: string }) => {
-        appendInstallLog(msg);
-      },
+async function rpcRequest(method: string, params?: any): Promise<any> {
+  const id = ++rpcReqId;
+  const res = await fetch(RPC_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "request", id, method, params: params ?? {} }),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const body = await res.json();
+  if (body.error) {
+    throw new Error(body.error);
+  }
+  return body.result;
+}
+
+const rpc = {
+  request: new Proxy({} as any, {
+    get: (_target, prop) => {
+      return (params: any) => rpcRequest(String(prop), params);
+    },
+  }),
+  send: {
+    backendStatus: (status: BackendStatus) => {
+      updateBackendStatusUI(status);
+      if (status.running && !backendUrl) {
+        backendUrl = status.url;
+        initAfterBackendReady();
+      }
+    },
+    backendLog: (msg: { stream: "stdout" | "stderr"; text: string }) => {
+      console.log(`[Backend ${msg.stream}]`, msg.text);
+    },
+    installStatus: (status: { phase: string; progress?: number; message?: string; canCancel?: boolean; canRetry?: boolean }) => {
+      handleInstallStatus(status);
+    },
+    installLog: (msg: { stream: "stdout" | "stderr"; text: string }) => {
+      appendInstallLog(msg);
     },
   },
-});
+};
 
-new Electroview({ rpc });
+// ---------------------------------------------------------------------------
+// Debug banner helpers
+// ---------------------------------------------------------------------------
+function setDebug(msg: string) {
+  let banner = document.getElementById("debug-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "debug-banner";
+    banner.style.cssText = "position:fixed;top:0;left:0;right:0;background:#333;color:#0f0;padding:6px 12px;z-index:9999;font-family:monospace;font-size:12px;white-space:pre-wrap;";
+    document.body.appendChild(banner);
+  }
+  banner.textContent = msg;
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -98,12 +98,19 @@ let isStreaming = false;
 let conversation: ChatMessage[] = [];
 let currentSessionId = "";
 let attachments: Attachment[] = [];
+let currentModelConfig = { model: "", provider: "" };
 
 // ---------------------------------------------------------------------------
 // DOM Helpers
 // ---------------------------------------------------------------------------
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null;
 const $$ = (sel: string) => document.querySelectorAll(sel) as NodeListOf<HTMLElement>;
+(window as any).$ = $;
+(window as any).$$ = $$;
+
+function updateDocumentTitle(name: string) {
+  document.title = name ? `${name} — Hermes Agent` : "Hermes Agent";
+}
 
 function escapeHtml(text: string): string {
   const div = document.createElement("div");
@@ -137,15 +144,18 @@ async function initAfterBackendReady() {
   loadModels();
   loadCurrentModel();
   loadSessionHistory();
+  loadSkills();
+  loadProfiles();
 }
 
 async function loadCurrentModel() {
   try {
     const cfg = await rpc.request.getCurrentModel({});
+    currentModelConfig = { model: cfg.model || "", provider: cfg.provider || "" };
     const modelInput = $("#model-input") as HTMLInputElement | null;
     const providerSelect = $("#provider-select") as HTMLSelectElement | null;
-    if (modelInput) modelInput.value = cfg.model || "";
-    if (providerSelect) providerSelect.value = cfg.provider || "";
+    if (modelInput) modelInput.value = currentModelConfig.model;
+    if (providerSelect) providerSelect.value = currentModelConfig.provider;
   } catch (e) {
     console.error("Failed to load current model:", e);
   }
@@ -203,6 +213,277 @@ async function loadModels() {
 }
 
 // ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+async function loadWorkspace() {
+  try {
+    const data = await rpc.request.listWorkspace({ path: "" });
+    const container = $("#workspace-list");
+    if (!container) return;
+    const entries = data.entries || [];
+    if (entries.length === 0) {
+      container.innerHTML = '<div class="panel-empty">No files</div>';
+      return;
+    }
+    container.innerHTML = entries.map((e: any) => `
+      <div class="workspace-item ${e.isDirectory ? 'folder' : 'file'}">
+        ${e.isDirectory ? '📁' : '📄'} ${escapeHtml(e.name)}
+      </div>
+    `).join("");
+  } catch (e) {
+    console.error("Failed to load workspace:", e);
+    $("#workspace-list")!.innerHTML = '<div class="panel-empty">Error loading workspace</div>';
+  }
+}
+
+async function loadTasks() {
+  try {
+    const data = await rpc.request.listCron({});
+    const container = $("#tasks-list");
+    if (!container) return;
+    const jobs = data.jobs || [];
+    if (jobs.length === 0) {
+      container.innerHTML = '<div class="panel-empty">No tasks</div>';
+      return;
+    }
+    container.innerHTML = jobs.map((j: any) => `
+      <div class="task-item">
+        <div class="task-name">${escapeHtml(j.name || j.id || 'Untitled')}</div>
+        <div class="task-schedule">${escapeHtml(j.schedule || j.cron || '')}</div>
+      </div>
+    `).join("");
+  } catch (e) {
+    console.error("Failed to load tasks:", e);
+    $("#tasks-list")!.innerHTML = '<div class="panel-empty">Error loading tasks</div>';
+  }
+}
+
+async function loadMemory() {
+  try {
+    const data = await rpc.request.getMemory({});
+    const editor = $("#memory-editor") as HTMLTextAreaElement | null;
+    if (editor) editor.value = data.content || "";
+  } catch (e) {
+    console.error("Failed to load memory:", e);
+  }
+}
+
+async function saveMemory() {
+  const editor = $("#memory-editor") as HTMLTextAreaElement | null;
+  if (!editor) return;
+  try {
+    const res = await rpc.request.saveMemory({ content: editor.value });
+    if (res.success) {
+      alert("Memory saved.");
+    } else {
+      alert("Save failed: " + (res.error || "Unknown error"));
+    }
+  } catch (e: any) {
+    alert("Save failed: " + e.message);
+  }
+}
+
+async function loadProfiles() {
+  try {
+    const data = await rpc.request.listProfiles({});
+    const container = $("#profile-list");
+    if (!container) return;
+    const profiles = data.profiles || [];
+    container.innerHTML = profiles.map((p: any) => `
+      <div class="profile-item ${p.active ? 'active' : ''}" data-name="${escapeHtml(p.name)}">
+        <span class="profile-dot ${p.active ? 'on' : ''}"></span>
+        <span class="profile-name">${escapeHtml(p.name)}</span>
+        ${p.active ? '<span class="profile-badge">active</span>' : ''}
+      </div>
+    `).join("");
+    container.querySelectorAll<HTMLDivElement>(".profile-item").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const name = el.dataset.name || "";
+        if (!name) return;
+        await rpc.request.switchProfile({ name });
+        await loadProfiles();
+      });
+    });
+  } catch (e) {
+    console.error("Failed to load profiles:", e);
+    $("#profile-list")!.innerHTML = '<div class="panel-empty">Error loading profiles</div>';
+  }
+}
+
+async function createProfile() {
+  const input = $("#new-profile-name") as HTMLInputElement | null;
+  const name = input?.value.trim();
+  if (!name) return;
+  try {
+    await rpc.request.createProfile({ name });
+    input && (input.value = "");
+    await loadProfiles();
+  } catch (e: any) {
+    alert("Create profile failed: " + e.message);
+  }
+}
+
+async function deleteProfile(name: string) {
+  if (!confirm(`Delete profile "${name}"?`)) return;
+  try {
+    await rpc.request.deleteProfile({ name });
+    await loadProfiles();
+  } catch (e: any) {
+    alert("Delete profile failed: " + e.message);
+  }
+}
+
+async function loadSkills() {
+  try {
+    const data = await rpc.request.listSkills({});
+    renderSkillsList(data.skills || []);
+  } catch (e) {
+    console.error("Failed to load skills:", e);
+    renderSkillsList([]);
+  }
+}
+
+function renderSkillsList(skills: any[]) {
+  const container = $("#skills-list");
+  if (!container) return;
+
+  if (skills.length === 0) {
+    container.innerHTML = '<div class="skills-empty">No skills installed</div>';
+    return;
+  }
+
+  container.innerHTML = "";
+  skills.forEach((skill) => {
+    const isDisabled = skill.enabled === false || skill.disabled === true;
+    const el = document.createElement("div");
+    el.className = `skill-item ${isDisabled ? "disabled" : ""}`;
+    el.title = skill.description || "";
+    el.dataset.skillName = skill.name || "";
+
+    const actionsHtml = `
+      <div class="skill-actions">
+        <button class="skill-action-btn skill-btn-use" title="Use">▸</button>
+        <button class="skill-action-btn skill-btn-toggle" title="${isDisabled ? "Enable" : "Disable"}">${isDisabled ? "◯" : "◉"}</button>
+        <button class="skill-action-btn skill-btn-update" title="Update">↻</button>
+        <button class="skill-action-btn skill-btn-uninstall" title="Uninstall">✕</button>
+      </div>
+    `;
+
+    el.innerHTML = `
+      <div class="skill-name">${escapeHtml(skill.name || "Unnamed")}</div>
+      <div class="skill-desc">${escapeHtml((skill.description || "").slice(0, 60))}</div>
+      ${actionsHtml}
+    `;
+
+    el.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".skill-actions")) return;
+      const input = $("#message-input") as HTMLTextAreaElement | null;
+      if (!input) return;
+      const slug = (skill.name || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      input.value = `/${slug} `;
+      input.focus();
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+    });
+
+    el.querySelector(".skill-btn-use")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const input = $("#message-input") as HTMLTextAreaElement | null;
+      if (!input) return;
+      const slug = (skill.name || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      input.value = `/${slug} `;
+      input.focus();
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+    });
+
+    el.querySelector(".skill-btn-toggle")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleSkill(skill.name || "", isDisabled);
+    });
+
+    el.querySelector(".skill-btn-update")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      updateSkill(skill.name || "");
+    });
+
+    el.querySelector(".skill-btn-uninstall")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      uninstallSkill(skill.name || "");
+    });
+
+    container.appendChild(el);
+  });
+}
+
+async function toggleSkill(name: string, currentlyDisabled: boolean) {
+  try {
+    if (currentlyDisabled) {
+      await rpc.request.enableSkill({ name });
+    } else {
+      await rpc.request.disableSkill({ name });
+    }
+    loadSkills();
+  } catch (e: any) {
+    alert(currentlyDisabled ? "Enable failed" : "Disable failed");
+    console.error(e);
+  }
+}
+
+async function updateSkill(name: string) {
+  try {
+    const res = await rpc.request.updateSkill({ name });
+    if (res.success) {
+      loadSkills();
+    } else {
+      alert(res.error || "Update failed");
+    }
+  } catch (e: any) {
+    alert("Update failed");
+    console.error(e);
+  }
+}
+
+async function uninstallSkill(name: string) {
+  if (!confirm(`Uninstall skill "${name}"?`)) return;
+  try {
+    const res = await rpc.request.uninstallSkill({ name });
+    if (res.success) {
+      loadSkills();
+    } else {
+      alert(res.error || "Uninstall failed");
+    }
+  } catch (e: any) {
+    alert("Uninstall failed");
+    console.error(e);
+  }
+}
+
+async function installNewSkill() {
+  const input = $("#skill-install-input") as HTMLInputElement | null;
+  if (!input) return;
+  const identifier = input.value.trim();
+  if (!identifier) return;
+  input.value = "";
+  try {
+    const res = await rpc.request.installSkill({ identifier });
+    if (res.success) {
+      loadSkills();
+    } else {
+      alert(res.error || "Install failed");
+    }
+  } catch (e: any) {
+    alert("Install failed");
+    console.error(e);
+  }
+}
+
+function toggleSkillsPanel() {
+  const wrapper = $(".skills-wrapper");
+  wrapper?.classList.toggle("collapsed");
+}
+
+// ---------------------------------------------------------------------------
 // Session History
 // ---------------------------------------------------------------------------
 async function loadSessionHistory() {
@@ -217,15 +498,25 @@ async function loadSessionHistory() {
     sessions.forEach((s) => {
       const el = document.createElement("div");
       el.className = "session-item";
+      if (s.pinned) el.classList.add("pinned");
+      if (s.archived) el.classList.add("archived");
       el.dataset.id = s.id;
       if (s.id === currentSessionId) el.classList.add("active");
 
       const dateStr = s.updated_at ? new Date(s.updated_at).toLocaleDateString() : "";
+      const tagChips = (s.tags || []).map((t: string) => `<span class="session-tag">#${escapeHtml(t)}</span>`).join("");
       el.innerHTML = `
-        <div class="session-name">${escapeHtml(s.display_name)}</div>
-        <div class="session-meta">${dateStr} · ${s.message_count} msgs</div>
+        <div class="session-main">
+          <div class="session-name">${escapeHtml(s.display_name)}</div>
+          <div class="session-meta">${dateStr} · ${s.message_count} msgs${tagChips}</div>
+        </div>
+        <button class="session-menu-btn" title="Actions">⋮</button>
       `;
-      el.addEventListener("click", () => loadSessionMessages(s.id));
+      el.querySelector(".session-main")?.addEventListener("click", () => loadSessionMessages(s.id, s.display_name));
+      el.querySelector(".session-menu-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showSessionMenu(s.id, s.display_name, e.target as HTMLElement);
+      });
       container.appendChild(el);
     });
   } catch (e) {
@@ -233,11 +524,12 @@ async function loadSessionHistory() {
   }
 }
 
-async function loadSessionMessages(sessionId: string) {
+async function loadSessionMessages(sessionId: string, displayName?: string) {
   if (isStreaming) return;
   try {
     const messages = await rpc.request.loadSession({ sessionId });
     currentSessionId = sessionId;
+    updateDocumentTitle(displayName || "Hermes Agent");
     conversation = messages.filter((m) => m.role === "user" || m.role === "assistant");
 
     // Update UI active state
@@ -258,7 +550,9 @@ async function loadSessionMessages(sessionId: string) {
     }
 
     conversation.forEach((msg) => {
-      const contentDiv = appendMessage(msg.role as any, msg.content || "");
+      const ts = msg.created_at || msg.timestamp || undefined;
+      const contentDiv = appendMessage(msg.role as any, msg.content || "", ts);
+      if (msg.reasoning) renderThinkingCard(contentDiv, msg.reasoning);
       postProcessMessage(contentDiv);
     });
   } catch (e) {
@@ -269,7 +563,7 @@ async function loadSessionMessages(sessionId: string) {
 // ---------------------------------------------------------------------------
 // Chat UI
 // ---------------------------------------------------------------------------
-function appendMessage(role: "user" | "assistant", content: string): HTMLElement {
+function appendMessage(role: "user" | "assistant", content: string, timestamp?: string): HTMLElement {
   const messagesEl = $("#messages")!;
 
   const emptyState = messagesEl.querySelector(".empty-state");
@@ -282,14 +576,35 @@ function appendMessage(role: "user" | "assistant", content: string): HTMLElement
   avatar.className = "message-avatar";
   avatar.textContent = role === "user" ? "U" : "H";
 
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  if (timestamp) {
+    const d = new Date(timestamp);
+    const timeStr = isNaN(d.getTime()) ? String(timestamp) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dateStr = isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "message-time";
+    timeSpan.textContent = timeStr;
+    timeSpan.title = dateStr ? `${dateStr} ${timeStr}` : timeStr;
+    meta.appendChild(timeSpan);
+  }
+
   const contentDiv = document.createElement("div");
   contentDiv.className = "message-content";
   contentDiv.innerHTML = formatContent(content);
 
   wrapper.appendChild(avatar);
+  wrapper.appendChild(meta);
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  // Render mermaid diagrams inside this message
+  if ((window as any).mermaid) {
+    try {
+      (window as any).mermaid.run({ nodes: contentDiv.querySelectorAll('.mermaid') });
+    } catch {}
+  }
 
   return contentDiv;
 }
@@ -300,7 +615,15 @@ function formatContent(text: string): string {
   // Code blocks
   html = html.replace(
     /```(\w+)?\n([\s\S]*?)```/g,
-    (_, lang, code) => `<pre><code>${escapeHtml(code.trim())}</code></pre>`
+    (_, lang, code) => {
+      const lg = (lang || "").toLowerCase();
+      const safeCode = escapeHtml(code.trim());
+      if (lg === "mermaid") {
+        return `<div class="mermaid">${safeCode}</div>`;
+      }
+      const safeLang = escapeHtml(lang || "");
+      return `<div class="code-block"><div class="code-header"><span class="code-lang">${safeLang}</span><button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code>${safeCode}</code></pre></div>`;
+    }
   );
 
   // Inline code
@@ -364,7 +687,7 @@ function postProcessMessage(contentDiv: HTMLElement) {
         /`([^`]+)`/g,
         (_: string, inner: string) => {
           // Heuristic: if it starts with an emoji, treat as tool call
-          if (/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]/.test(inner.trim())) {
+          if (/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]/u.test(inner.trim())) {
             return `
               <div class="tool-call-card">
                 <div class="tool-call-header" onclick="this.closest('.tool-call-card').classList.toggle('open')">
@@ -384,35 +707,184 @@ function postProcessMessage(contentDiv: HTMLElement) {
 }
 
 // ---------------------------------------------------------------------------
-// SSE Streaming Parser
+// SSE Streaming Parser with live tool-call detection
 // ---------------------------------------------------------------------------
-async function streamChatCompletion(body: object, contentDiv: HTMLElement) {
+class MessageBlockBuilder {
+  container: HTMLElement;
+  blocks: Array<{ type: "text"; content: string; el: HTMLElement } | { type: "tool"; name: string; el: HTMLElement }> = [];
+  private _removedThinking = false;
+
+  constructor(container: HTMLElement) {
+    this.container = container;
+  }
+
+  private _ensureThinkingRemoved() {
+    if (this._removedThinking) return;
+    this._removedThinking = true;
+    const thinking = this.container.querySelector(".thinking");
+    if (thinking) thinking.remove();
+  }
+
+  appendText(text: string) {
+    this._ensureThinkingRemoved();
+    const last = this.blocks[this.blocks.length - 1];
+    if (last && last.type === "text") {
+      last.content += text;
+      last.el.innerHTML = formatContent(last.content);
+    } else {
+      const el = document.createElement("div");
+      el.className = "message-text-block";
+      el.innerHTML = formatContent(text);
+      this.container.appendChild(el);
+      this.blocks.push({ type: "text", content: text, el });
+    }
+  }
+
+  addTool(name: string) {
+    this._ensureThinkingRemoved();
+    const el = document.createElement("div");
+    el.className = "tool-call-card running";
+    el.innerHTML = `
+      <div class="tool-call-header" onclick="this.closest('.tool-call-card').classList.toggle('open')">
+        <span class="tool-call-title">${escapeHtml(name)}</span>
+        <span class="tool-call-arrow">▶</span>
+      </div>
+      <div class="tool-call-body">Executing via Hermes Agent tool runtime.</div>
+    `;
+    this.container.appendChild(el);
+    this.blocks.push({ type: "tool", name, el });
+  }
+
+  completeTools() {
+    this.blocks.forEach((b) => {
+      if (b.type === "tool") {
+        b.el.classList.remove("running");
+        const body = b.el.querySelector(".tool-call-body");
+        if (body) body.textContent = "Tool execution completed.";
+      }
+    });
+  }
+
+  processBuffer() {
+    const last = this.blocks[this.blocks.length - 1];
+    if (!last || last.type !== "text") return;
+
+    // Pattern: standalone line that is `emoji ToolName` (surrounded by newlines or edges)
+    const pattern = /(?:^|\n)`([\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}][^`]+)`\n/u;
+
+    while (true) {
+      const match = last.content.match(pattern);
+      if (!match) break;
+
+      const idx = match.index ?? 0;
+      const raw = match[0];
+      const before = last.content.slice(0, idx);
+      const after = last.content.slice(idx + raw.length);
+
+      // Update last text block to only the text before the tool call
+      last.content = before.replace(/\n+$/, "");
+      last.el.innerHTML = formatContent(last.content);
+
+      // Append tool card
+      this.addTool(match[1]);
+
+      // Start new text block with remaining text if any
+      const remaining = after.replace(/^\n+/, "");
+      if (remaining) {
+        const el = document.createElement("div");
+        el.className = "message-text-block";
+        el.innerHTML = formatContent(remaining);
+        this.container.appendChild(el);
+        this.blocks.push({ type: "text", content: remaining, el });
+      } else {
+        // Empty buffer ready for future text
+        const el = document.createElement("div");
+        el.className = "message-text-block";
+        el.innerHTML = "";
+        this.container.appendChild(el);
+        this.blocks.push({ type: "text", content: "", el });
+      }
+    }
+  }
+}
+
+async function streamChatCompletion(body: any, contentDiv: HTMLElement) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (currentSessionId) {
     headers["X-Hermes-Session-Id"] = currentSessionId;
   }
-  const response = await fetch(`${backendUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
+  const controller = new AbortController();
+  const fetchTimeout = setTimeout(() => controller.abort(), 90000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${backendUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(fetchTimeout);
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
+  if (!response.ok) {
+    const errText = await response.text();
+    let errMsg = errText;
+    try {
+      const errJson = JSON.parse(errText);
+      errMsg = errJson.error?.message || errJson.message || errText;
+    } catch {
+      // not JSON, use raw text
+    }
+    throw new Error(errMsg || `HTTP ${response.status}`);
+  }
 
+  const contentType = response.headers.get("content-type") || "";
+
+  // If backend returned plain JSON (non-streaming), parse it directly.
+  if (!contentType.includes("text/event-stream") || !response.body) {
+    const json: any = await response.json().catch(() => ({}));
+    const content = json.choices?.[0]?.message?.content || json.message || JSON.stringify(json);
+    if (typeof content === "string") {
+      contentDiv.innerHTML = formatContent(content);
+      _postProcessInlineToolCodes(contentDiv);
+    } else {
+      contentDiv.innerHTML = `<p style="color:#ef4444">Unexpected response format</p>`;
+    }
+    const sessionHeader = response.headers.get("X-Hermes-Session-Id");
+    if (sessionHeader) {
+      currentSessionId = sessionHeader;
+      loadSessionHistory();
+    }
+    return typeof content === "string" ? content : "";
+  }
+
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let fullText = "";
+  const builder = new MessageBlockBuilder(contentDiv);
+  let lastDataTime = Date.now();
+  const readTimeoutMs = 40000;
+
+  async function readNext() {
+    const remaining = readTimeoutMs - (Date.now() - lastDataTime);
+    if (remaining <= 0) throw new Error("Stream read timeout (no data from backend)");
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Stream read timeout (no data from backend)")), remaining)
+      ),
+    ]);
+    return result;
+  }
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readNext();
     if (done) break;
 
+    lastDataTime = Date.now();
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
@@ -425,29 +897,78 @@ async function streamChatCompletion(body: object, contentDiv: HTMLElement) {
           const parsed = JSON.parse(data);
           const delta = parsed.choices?.[0]?.delta;
           if (delta?.content) {
-            fullText += delta.content;
-            contentDiv.innerHTML = formatContent(fullText);
+            builder.appendText(delta.content);
+            builder.processBuffer();
             const messagesEl = $("#messages")!;
             messagesEl.scrollTop = messagesEl.scrollHeight;
           }
-        } catch {
-          // ignore malformed JSON
+          // Some backends wrap errors inside SSE data
+          if (parsed.error) {
+            throw new Error(parsed.error.message || JSON.stringify(parsed.error));
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== "Unexpected token") {
+            throw e;
+          }
+          // ignore malformed JSON lines
         }
       }
     }
   }
 
-  // Post-process tool calls after stream completes
-  postProcessMessage(contentDiv);
+  builder.completeTools();
+
+  // Fallback: post-process any inline emoji code patterns in remaining text blocks
+  builder.blocks.forEach((b) => {
+    if (b.type === "text") {
+      _postProcessInlineToolCodes(b.el);
+    }
+  });
+
+  // If stream finished but we got zero text/tool blocks, try to show a friendly fallback
+  const hasContent = builder.blocks.some((b) => (b.type === "text" ? b.content.trim() : true));
+  if (!hasContent) {
+    contentDiv.innerHTML = `<p style="color:#a3a3a3">No response content received from backend.</p>`;
+  }
 
   // Try to capture session id from headers for future loads
   const sessionHeader = response.headers.get("X-Hermes-Session-Id");
   if (sessionHeader) {
     currentSessionId = sessionHeader;
-    loadSessionHistory(); // refresh list so this session appears
+    loadSessionHistory();
   }
 
-  return fullText;
+  // Reconstruct full text from blocks for conversation history
+  return builder.blocks
+    .map((b) => (b.type === "text" ? b.content : `\`${b.name}\``))
+    .join("");
+}
+
+function _postProcessInlineToolCodes(el: HTMLElement) {
+  const children = Array.from(el.children);
+  children.forEach((child) => {
+    if (child.tagName === "P") {
+      const pHtml = child.innerHTML;
+      const newHtml = pHtml.replace(
+        /`([^`]+)`/g,
+        (_: string, inner: string) => {
+          if (/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]/u.test(inner.trim())) {
+            return `
+              <div class="tool-call-card">
+                <div class="tool-call-header" onclick="this.closest('.tool-call-card').classList.toggle('open')">
+                  <span class="tool-call-title">${escapeHtml(inner)}</span>
+                  <span class="tool-call-arrow">▶</span>
+                </div>
+                <div class="tool-call-body">Executed via Hermes Agent tool runtime.</div>
+              </div>
+            `;
+          }
+          return `<code>${escapeHtml(inner)}</code>`;
+        }
+      );
+      if (newHtml !== pHtml) child.innerHTML = newHtml;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -557,7 +1078,7 @@ async function sendMessage() {
 
   try {
     const body = {
-      model: "hermes-agent",
+      model: currentModelConfig.model || "hermes-agent",
       messages: conversation,
       stream: true,
     };
@@ -575,6 +1096,7 @@ async function sendMessage() {
 
 function newChat() {
   currentSessionId = "";
+  updateDocumentTitle("Hermes Agent");
   conversation = [];
   const messagesEl = $("#messages")!;
   messagesEl.innerHTML = `
@@ -591,6 +1113,162 @@ function newChat() {
 function focusInput() {
   const input = $("#message-input") as HTMLTextAreaElement | null;
   input?.focus();
+}
+
+function showSessionMenu(sessionId: string, displayName: string, anchor: HTMLElement) {
+  const existing = $(".session-action-menu");
+  existing?.remove();
+
+  const menu = document.createElement("div");
+  menu.className = "session-action-menu";
+  const rect = anchor.getBoundingClientRect();
+  menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left - 120}px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:6px 0;z-index:1000;min-width:140px;box-shadow:0 8px 30px rgba(0,0,0,0.25);`;
+
+  const actions = [
+    { label: "Rename", action: () => renameSession(sessionId) },
+    { label: "Pin / Unpin", action: () => togglePinSession(sessionId) },
+    { label: "Archive / Unarchive", action: () => toggleArchiveSession(sessionId) },
+    { label: "Tag", action: () => tagSession(sessionId) },
+    { label: "Delete", action: () => deleteSession(sessionId), danger: true },
+  ];
+
+  actions.forEach((a) => {
+    const btn = document.createElement("div");
+    btn.className = "session-action-item";
+    btn.textContent = a.label;
+    if (a.danger) btn.style.color = "var(--error)";
+    btn.addEventListener("click", async () => {
+      menu.remove();
+      await a.action();
+    });
+    menu.appendChild(btn);
+  });
+
+  document.body.appendChild(menu);
+  const dismiss = () => menu.remove();
+  setTimeout(() => document.addEventListener("click", dismiss, { once: true }), 0);
+}
+
+async function renameSession(sessionId: string) {
+  const name = prompt("New session name:");
+  if (!name) return;
+  await rpc.request.renameSession({ sessionId, name });
+  await loadSessionHistory();
+}
+
+async function togglePinSession(sessionId: string) {
+  const el = $(`.session-item[data-id="${sessionId}"]`);
+  const pinned = el?.classList.contains("pinned");
+  await rpc.request.pinSession({ sessionId, pinned: !pinned });
+  await loadSessionHistory();
+}
+
+async function toggleArchiveSession(sessionId: string) {
+  const el = $(`.session-item[data-id="${sessionId}"]`);
+  const archived = el?.classList.contains("archived");
+  await rpc.request.archiveSession({ sessionId, archived: !archived });
+  await loadSessionHistory();
+}
+
+async function tagSession(sessionId: string) {
+  const raw = prompt("Tags (comma separated):");
+  if (raw === null) return;
+  const tags = raw.split(",").map((t) => t.trim()).filter(Boolean);
+  await rpc.request.tagSession({ sessionId, tags });
+  await loadSessionHistory();
+}
+
+async function deleteSession(sessionId: string) {
+  if (!confirm("Delete this session permanently?")) return;
+  await rpc.request.deleteSession({ sessionId });
+  if (currentSessionId === sessionId) newChat();
+  await loadSessionHistory();
+}
+
+function renderThinkingCard(contentDiv: HTMLElement, reasoning: string) {
+  if (!reasoning?.trim()) return;
+  const card = document.createElement("div");
+  card.className = "thinking-card";
+  card.innerHTML = `
+    <div class="thinking-header" onclick="this.closest('.thinking-card').classList.toggle('open')">
+      <span>🧠 Thinking</span>
+      <span class="thinking-arrow">▶</span>
+    </div>
+    <div class="thinking-body"><pre>${escapeHtml(reasoning)}</pre></div>
+  `;
+  contentDiv.insertBefore(card, contentDiv.firstChild);
+}
+
+const SLASH_COMMANDS = [
+  { name: "new", desc: "Start new chat" },
+  { name: "clear", desc: "Clear conversation" },
+  { name: "theme", desc: "Change theme" },
+  { name: "compact", desc: "Compact history" },
+  { name: "help", desc: "Show help" },
+];
+
+function updateSlashMenu() {
+  hideSlashMenu();
+  const input = $("#message-input") as HTMLTextAreaElement | null;
+  if (!input) return;
+  const textBefore = input.value.slice(0, input.selectionStart || 0);
+  const match = textBefore.match(/(^|\s)\/(\w*)$/);
+  if (!match) return;
+
+  const query = match[2].toLowerCase();
+  // Merge built-in commands with skill commands (best-effort)
+  const all = [...SLASH_COMMANDS];
+  const items = all.filter((c) => c.name.startsWith(query));
+  if (items.length === 0) return;
+
+  const rect = input.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.className = "slash-menu";
+  menu.style.cssText = `position:fixed;left:${rect.left}px;bottom:${window.innerHeight - rect.top + 4}px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:6px 0;z-index:1000;min-width:180px;box-shadow:0 8px 30px rgba(0,0,0,0.25);`;
+
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "slash-item" + (idx === 0 ? " active" : "");
+    row.style.cssText = "padding:8px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;";
+    row.innerHTML = `<span>/${item.name}</span><span style=\"color:var(--text-secondary);font-size:12px;\">${escapeHtml(item.desc)}</span>`;
+    row.addEventListener("mouseenter", () => {
+      menu.querySelectorAll(".slash-item").forEach((i) => i.classList.remove("active"));
+      row.classList.add("active");
+    });
+    row.addEventListener("click", () => {
+      const before = textBefore.slice(0, textBefore.lastIndexOf("/"));
+      input.value = before + `/${item.name} `;
+      hideSlashMenu();
+      input.focus();
+    });
+    menu.appendChild(row);
+  });
+
+  document.body.appendChild(menu);
+}
+
+function hideSlashMenu() {
+  $(".slash-menu")?.remove();
+}
+
+function setTheme(theme: string) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("hermes-theme", theme);
+  $$(".theme-chip").forEach((btn) => {
+    btn.classList.toggle("active", (btn as HTMLButtonElement).dataset.theme === theme);
+  });
+}
+
+function openSettings() {
+  $("#settings-overlay")?.classList.remove("hidden");
+  const savedTheme = localStorage.getItem("hermes-theme") || "dark";
+  $$(".theme-chip").forEach((btn) => {
+    btn.classList.toggle("active", (btn as HTMLButtonElement).dataset.theme === savedTheme);
+  });
+}
+
+function closeSettings() {
+  $("#settings-overlay")?.classList.add("hidden");
 }
 
 // ---------------------------------------------------------------------------
@@ -676,12 +1354,12 @@ function renderSetupForm(fields: any[]) {
   });
 }
 
-async function handleInstallStatus(status: { state: string; progress?: number; error?: any }) {
-  if (status.state === "ready" || status.state === "detecting") {
+async function handleInstallStatus(status: { phase: string; progress?: number; message?: string; canCancel?: boolean; canRetry?: boolean }) {
+  if (status.phase === "ready" || status.phase === "detecting") {
     // detecting handled during init
   }
 
-  if (status.state === "notInstalled") {
+  if (status.phase === "not_installed") {
     showOverlay();
     setOnboardingTitle("需要安装 Hermes Agent");
     setOnboardingDesc("我们检测到您的系统中尚未安装 Hermes Agent。点击下方按钮开始自动安装。");
@@ -694,7 +1372,7 @@ async function handleInstallStatus(status: { state: string; progress?: number; e
     return;
   }
 
-  if (status.state === "installing") {
+  if (status.phase === "installing") {
     showOverlay();
     setOnboardingTitle("正在安装 Hermes Agent");
     setOnboardingDesc("安装过程可能需要几分钟，取决于网络速度。请保持应用开启。");
@@ -707,14 +1385,14 @@ async function handleInstallStatus(status: { state: string; progress?: number; e
     return;
   }
 
-  if (status.state === "needsConfig") {
+  if (status.phase === "needs_config") {
     showOverlay();
     setOnboardingTitle("配置 Hermes Agent");
     setOnboardingDesc("请填写您的模型提供商和 API Key，以便开始聊天。");
     showPanel("setup-panel");
     $("#setup-error")?.classList.add("hidden");
     try {
-      const fields = await rpc.request.getSetupFields({});
+      const { fields } = await rpc.request.getSetupFields({});
       renderSetupForm(fields);
     } catch (e) {
       console.error("Failed to load setup fields:", e);
@@ -722,20 +1400,20 @@ async function handleInstallStatus(status: { state: string; progress?: number; e
     return;
   }
 
-  if (status.state === "error") {
+  if (status.phase === "error") {
     showOverlay();
     setOnboardingTitle("出错了");
-    const err = status.error || { code: "UNKNOWN_ERROR", message: "未知错误" };
+    const errMsg = status.message || "未知错误";
     setOnboardingDesc("安装或启动过程中遇到了问题。");
     showPanel("error-panel");
     const errEl = $("#error-message") as HTMLElement | null;
     if (errEl) {
-      errEl.innerHTML = `<strong>${escapeHtml(err.code)}</strong><br>${escapeHtml(err.message)}`;
+      errEl.innerHTML = `<strong>ERROR</strong><br>${escapeHtml(errMsg)}`;
     }
     return;
   }
 
-  if (status.state === "ready") {
+  if (status.phase === "ready") {
     hideOverlay();
     if (!onboardingResolved) {
       onboardingResolved = true;
@@ -780,7 +1458,7 @@ async function submitSetup(e: Event) {
   if (errorEl) errorEl.classList.add("hidden");
 
   try {
-    const res = await rpc.request.submitSetupConfig({ values });
+    const res = await rpc.request.submitSetupConfig(values);
     if (!res.success) {
       if (errorEl) {
         errorEl.classList.remove("hidden");
@@ -812,7 +1490,44 @@ function openManualInstall() {
 // ---------------------------------------------------------------------------
 // Event Listeners
 // ---------------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+function initPage() {
+  setDebug("initPage() running...");
+  const savedTheme = localStorage.getItem("hermes-theme") || "dark";
+  setTheme(savedTheme);
+
+  // Connect to backend via HTTP-RPC
+  (async () => {
+    const hd = document.getElementById("hard-debug");
+    const maxRetries = 60;
+    for (let i = 0; i < maxRetries; i++) {
+      if (hd) {
+        hd.style.background = "#ca8a04";
+        hd.textContent = `Connecting to backend... (attempt ${i + 1}/${maxRetries})`;
+      }
+      try {
+        const s = await rpc.request.getBackendStatus({});
+        if (hd) {
+          hd.style.background = s.running ? "#16a34a" : "#ca8a04";
+          hd.textContent = "Backend: running=" + s.running + " url=" + s.url;
+        }
+        updateBackendStatusUI(s);
+        if (s.running && !backendUrl) {
+          backendUrl = s.url;
+          initAfterBackendReady();
+          return;
+        }
+        // Backend RPC is reachable but Python backend not ready yet; keep polling
+        await new Promise((r) => setTimeout(r, 500));
+      } catch (e: any) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    if (hd) {
+      hd.style.background = "#7f1d1d";
+      hd.textContent = "Backend RPC ERROR: unable to connect to " + RPC_ENDPOINT;
+    }
+  })();
+
   $("#send-btn")?.addEventListener("click", sendMessage);
 
   $("#new-chat-btn")?.addEventListener("click", newChat);
@@ -834,17 +1549,143 @@ document.addEventListener("DOMContentLoaded", () => {
   const input = $("#message-input") as HTMLTextAreaElement | null;
   if (input) {
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
+      const sendKey = localStorage.getItem("hermes-sendkey") || "enter";
+      if (sendKey === "mod+enter") {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          sendMessage();
+        }
+      } else {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
       }
     });
 
     input.addEventListener("input", () => {
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+      updateSlashMenu();
+    });
+    input.addEventListener("keydown", (e) => {
+      const menu = $(".slash-menu");
+      if (!menu) return;
+      const items = Array.from(menu.querySelectorAll<HTMLDivElement>(".slash-item"));
+      let active = items.findIndex((i) => i.classList.contains("active"));
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (active >= 0) items[active].classList.remove("active");
+        active = (active + 1) % items.length;
+        items[active].classList.add("active");
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (active >= 0) items[active].classList.remove("active");
+        active = (active - 1 + items.length) % items.length;
+        items[active].classList.add("active");
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (active >= 0) items[active].click();
+        else if (items[0]) items[0].click();
+      } else if (e.key === "Escape") {
+        hideSlashMenu();
+      }
     });
   }
+
+  // Voice input mic button
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (SpeechRecognition && input) {
+    const inputBox = input.closest(".input-box") as HTMLElement | null;
+    if (inputBox) {
+      const micBtn = document.createElement("button");
+      micBtn.className = "icon-btn mic-btn";
+      micBtn.textContent = "🎤";
+      micBtn.title = "Voice input";
+      micBtn.type = "button";
+      let rec: any = null;
+      let baseText = "";
+      micBtn.addEventListener("click", () => {
+        if (micBtn.classList.contains("recording")) {
+          rec?.stop();
+          micBtn.classList.remove("recording");
+          return;
+        }
+        baseText = input.value ? input.value + " " : "";
+        micBtn.classList.add("recording");
+        rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = true;
+        rec.lang = "zh-CN";
+        rec.onresult = (event: any) => {
+          let transcript = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+          }
+          input.value = baseText + transcript;
+          input.style.height = "auto";
+          input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+        };
+        rec.onend = () => micBtn.classList.remove("recording");
+        rec.onerror = () => micBtn.classList.remove("recording");
+        rec.start();
+      });
+      inputBox.appendChild(micBtn);
+    }
+  }
+
+  // Mobile sidebar toggle
+  $("#menu-toggle")?.addEventListener("click", () => {
+    $(".sidebar")?.classList.toggle("open");
+    $("#mobile-overlay")?.classList.toggle("visible");
+  });
+  $("#mobile-overlay")?.addEventListener("click", () => {
+    $(".sidebar")?.classList.remove("open");
+    $("#mobile-overlay")?.classList.remove("visible");
+  });
+
+  // Settings panel
+  $("#settings-btn")?.addEventListener("click", openSettings);
+  $("#settings-close")?.addEventListener("click", closeSettings);
+  $("#settings-overlay")?.addEventListener("click", (e) => {
+    if (e.target === $("#settings-overlay")) closeSettings();
+  });
+
+  // Theme chips
+  $$<HTMLButtonElement>(".theme-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const theme = btn.dataset.theme || "dark";
+      setTheme(theme);
+    });
+  });
+
+  // Send key preference
+  const savedSendKey = localStorage.getItem("hermes-sendkey") || "enter";
+  const sendKeyRadios = $$<HTMLInputElement>("input[name='sendkey']");
+  sendKeyRadios.forEach((r) => {
+    if (r.value === savedSendKey) r.checked = true;
+    r.addEventListener("change", () => {
+      localStorage.setItem("hermes-sendkey", r.value);
+    });
+  });
+
+  // Panels: workspace, tasks, memory, profiles
+  $("#workspace-panel")?.querySelector(".panel-header")?.addEventListener("click", () => {
+    $("#workspace-panel")?.classList.toggle("collapsed");
+    if (!$("#workspace-panel")?.classList.contains("collapsed")) loadWorkspace();
+  });
+  $("#tasks-panel")?.querySelector(".panel-header")?.addEventListener("click", () => {
+    $("#tasks-panel")?.classList.toggle("collapsed");
+    if (!$("#tasks-panel")?.classList.contains("collapsed")) loadTasks();
+  });
+  $("#memory-panel")?.querySelector(".panel-header")?.addEventListener("click", () => {
+    $("#memory-panel")?.classList.toggle("collapsed");
+    if (!$("#memory-panel")?.classList.contains("collapsed")) loadMemory();
+  });
+  $("#memory-save-btn")?.addEventListener("click", saveMemory);
+
+  // Profiles inside settings
+  $("#profile-create-btn")?.addEventListener("click", createProfile);
 
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
@@ -861,13 +1702,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Drag & drop
   const chatContainer = $("#chat-container");
-  const dropOverlay = $("#drop-overlay");
+  const dropOverlay = $("#drop-overlay") as HTMLElement | null;
   if (chatContainer && dropOverlay) {
-    chatContainer.addEventListener("dragover", (e) => {
+    chatContainer.addEventListener("dragenter", (e) => {
       e.preventDefault();
       dropOverlay.classList.add("active");
     });
-
+    chatContainer.addEventListener("dragover", (e) => {
+      e.preventDefault();
+    });
     chatContainer.addEventListener("dragleave", (e) => {
       e.preventDefault();
       dropOverlay.classList.remove("active");
@@ -885,6 +1728,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Skills toggle & install
+  $("#skills-toggle")?.addEventListener("click", toggleSkillsPanel);
+  $("#skill-install-btn")?.addEventListener("click", installNewSkill);
+  $("#skill-install-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      installNewSkill();
+    }
+  });
+
   // Onboarding buttons
   $("#btn-start-install")?.addEventListener("click", startInstall);
   $("#btn-cancel-install")?.addEventListener("click", cancelInstall);
@@ -896,4 +1749,44 @@ document.addEventListener("DOMContentLoaded", () => {
   rpc.request.getInstallStatus({}).then((status) => {
     handleInstallStatus(status);
   });
-});
+
+  // Polling fallback: actively pull backend status until it's ready
+  // (message pushes from Bun can be lost during WebView navigation)
+  let pollCount = 0;
+  const maxPolls = 60;
+  const pollInterval = setInterval(async () => {
+    pollCount++;
+    setDebug(`poll #${pollCount}: calling getBackendStatus...`);
+    try {
+      const s = await rpc.request.getBackendStatus({});
+      setDebug(`poll #${pollCount}: running=${s.running} url=${s.url}`);
+      updateBackendStatusUI(s);
+      if (s.running) {
+        if (!backendUrl) {
+          backendUrl = s.url;
+          initAfterBackendReady();
+        }
+        clearInterval(pollInterval);
+      } else if (pollCount >= maxPolls) {
+        clearInterval(pollInterval);
+        console.warn("Backend status poll timeout");
+        const badge = $("#backend-status");
+        if (badge) badge.textContent = "Offline";
+      }
+    } catch (e: any) {
+      setDebug(`poll #${pollCount}: ERROR ${e?.message || String(e)}`);
+      console.error("Backend status poll failed:", e);
+      if (pollCount >= maxPolls) {
+        clearInterval(pollInterval);
+        const badge = $("#backend-status");
+        if (badge) badge.textContent = "Offline";
+      }
+    }
+  }, 800);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initPage);
+} else {
+  initPage();
+}

@@ -202,6 +202,7 @@ export function submitSetupConfig(input: Record<string, string>): SubmitSetupRes
       HERMES_PROVIDER: input.provider,
       HERMES_MODEL: input.model,
       HERMES_API_KEY: input.api_key,
+      GATEWAY_ALLOW_ALL_USERS: "true",
       ...(input.base_url?.trim() ? { HERMES_BASE_URL: input.base_url.trim() } : {}),
     });
     writtenTo.push(ENV_PATH);

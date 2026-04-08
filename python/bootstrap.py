@@ -45,10 +45,13 @@ def ensure_hermes_home():
             with open(config_dst, "w", encoding="utf-8") as f:
                 yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
 
-    # Ensure .env exists (empty is fine)
+    # Ensure .env exists with basic required vars
     env_file = home / ".env"
     if not env_file.exists():
-        env_file.write_text("# Hermes Agent GUI environment\n")
+        env_file.write_text(
+            "# Hermes Agent GUI environment\n"
+            "GATEWAY_ALLOW_ALL_USERS=true\n"
+        )
 
 
 async def main():
