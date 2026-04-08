@@ -1316,6 +1316,35 @@ listSessions: async () => {
       }
     },
 
+    setSessionWorkspace: async ({ sessionId, workspace }) => {
+      try {
+        const resolved = resolve(workspace || HERMES_HOME);
+        safeWorkspacePath(resolved);
+        const db = getStateDb();
+        db.query("UPDATE sessions SET workspace = ? WHERE id = ?").run(resolved, sessionId);
+        db.close();
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    compactContext: async ({ sessionId }) => {
+      try {
+        // Best-effort compact: truncate messages older than the last 20
+        const db = getStateDb();
+        const rows = db.query("SELECT timestamp FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1 OFFSET 20").all(sessionId) as any[];
+        if (rows.length > 0) {
+          const cutoff = rows[0].timestamp;
+          db.query("DELETE FROM messages WHERE session_id = ? AND timestamp <= ? AND role != 'system'").run(sessionId, cutoff);
+        }
+        db.close();
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
     saveFileUpload: async ({ name, dataBase64 }) => {
       try {
         ensureDir(UPLOADS_DIR);

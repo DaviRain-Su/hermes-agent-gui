@@ -1621,6 +1621,19 @@ async function sendMessage() {
   let text = input.value.trim();
   if (!text && attachments.length === 0) return;
 
+  // Slash commands
+  if (text.startsWith("/")) {
+    const parts = text.slice(1).split(/\s+/);
+    const cmd = parts[0];
+    const arg = parts.slice(1).join(" ");
+    const handled = await handleSlashCommand(cmd, arg);
+    if (handled) {
+      input.value = "";
+      input.style.height = "auto";
+      return;
+    }
+  }
+
   // Append attachment references
   if (attachments.length > 0) {
     const attachText = attachments.map((a) => `[Attached file: ${a.path}]`).join("\n");
@@ -1904,13 +1917,92 @@ function renderThinkingCard(contentDiv: HTMLElement, reasoning: string) {
   contentDiv.insertBefore(card, contentDiv.firstChild);
 }
 
+function showToast(message: string, duration = 3000) {
+  const existing = $(".toast-msg");
+  existing?.remove();
+  const div = document.createElement("div");
+  div.className = "toast-msg";
+  div.textContent = message;
+  div.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);padding:10px 16px;border-radius:8px;z-index:100000;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,0.25);white-space:pre-wrap;max-width:min(80vw,360px);text-align:center;";
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), duration);
+}
+
 const SLASH_COMMANDS = [
   { name: "new", desc: "Start new chat" },
   { name: "clear", desc: "Clear conversation" },
-  { name: "theme", desc: "Change theme" },
+  { name: "theme", desc: "Change theme (dark/light/slate...)" },
   { name: "compact", desc: "Compact history" },
+  { name: "model", desc: "Switch model" },
+  { name: "workspace", desc: "Switch workspace" },
+  { name: "usage", desc: "Show token usage" },
   { name: "help", desc: "Show help" },
 ];
+
+async function handleSlashCommand(cmd: string, arg: string): Promise<boolean> {
+  switch (cmd) {
+    case "new":
+      newChat();
+      return true;
+    case "clear": {
+      const messagesEl = $("#messages");
+      if (messagesEl) {
+        messagesEl.innerHTML = `
+          <div class="empty-state">
+            <h2>Cleared</h2>
+            <p>The conversation was cleared.</p>
+          </div>`;
+      }
+      conversation = [];
+      return true;
+    }
+    case "theme":
+      if (arg && document.documentElement.dataset.theme !== arg) {
+        setTheme(arg);
+      } else if (!arg) {
+        showToast("Usage: /theme <dark|light|slate|solarized|monokai|nord>");
+      }
+      return true;
+    case "compact": {
+      if (!currentSessionId) { showToast("No active session"); return true; }
+      const res = await rpc.request.compactContext({ sessionId: currentSessionId });
+      showToast(res.success ? "Context compacted" : "Compact failed: " + (res.error || ""));
+      if (res.success) loadSessionMessages(currentSessionId);
+      return true;
+    }
+    case "model": {
+      if (!arg) { showToast("Usage: /model <model-name>"); return true; }
+      const result = await rpc.request.setModel({ model: arg });
+      showToast(result.success ? `Model set to ${arg}` : "Set model failed");
+      if (result.success) loadCurrentModel();
+      return true;
+    }
+    case "workspace": {
+      if (!arg) { showToast("Usage: /workspace <path>"); return true; }
+      if (!currentSessionId) { showToast("No active session"); return true; }
+      const wsRes = await rpc.request.setSessionWorkspace({ sessionId: currentSessionId, workspace: arg });
+      showToast(wsRes.success ? `Workspace set to ${arg}` : "Set workspace failed: " + (wsRes.error || ""));
+      if (wsRes.success) {
+        workspacePath = "";
+        loadWorkspace();
+      }
+      return true;
+    }
+    case "usage": {
+      localStorage.setItem("hermes-token-usage", "1");
+      updateTokenUsageDisplay();
+      showToast("Token usage display enabled");
+      return true;
+    }
+    case "help": {
+      const helpText = SLASH_COMMANDS.map((c) => `/${c.name} — ${c.desc}`).join("\n");
+      showToast(helpText, 5000);
+      return true;
+    }
+    default:
+      return false;
+  }
+}
 
 function updateSlashMenu() {
   hideSlashMenu();
