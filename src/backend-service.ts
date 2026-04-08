@@ -4,6 +4,7 @@ import { join, resolve, basename } from "node:path";
 import { type Subprocess, spawn } from "bun";
 import { Database } from "bun:sqlite";
 import { readdirSync, statSync } from "node:fs";
+import { createHmac, randomUUID } from "node:crypto";
 import {
   detectInstallation,
   startInstallation as runInstallation,
@@ -391,6 +392,54 @@ const MEMORY_FILE = join(HERMES_HOME, "memory", "MEMORY.md");
 const USER_FILE = join(HERMES_HOME, "memory", "USER.md");
 const PROFILES_DIR = join(HERMES_HOME, "profiles");
 const SPACES_FILE = join(APP_DATA_DIR, "spaces.json");
+const GUI_SETTINGS_FILE = join(APP_DATA_DIR, "settings.json");
+
+interface GuiSettings {
+  password_hash?: string;
+}
+
+async function loadGuiSettings(): Promise<GuiSettings> {
+  try {
+    const text = await Bun.file(GUI_SETTINGS_FILE).text();
+    return JSON.parse(text) as GuiSettings;
+  } catch {
+    return {};
+  }
+}
+
+function saveGuiSettings(settings: GuiSettings) {
+  ensureDir(APP_DATA_DIR);
+  writeFileSync(GUI_SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+const AUTH_SECRET = process.env.HERMES_GUI_SECRET || randomUUID();
+
+function signToken(payload: object): string {
+  const header = { alg: "HS256", typ: "JWT" };
+  const h = Buffer.from(JSON.stringify(header)).toString("base64url");
+  const p = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", AUTH_SECRET).update(`${h}.${p}`).digest("base64url");
+  return `${h}.${p}.${sig}`;
+}
+
+function verifyToken(token: string): object | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [h, p, sig] = parts;
+  const expected = createHmac("sha256", AUTH_SECRET).update(`${h}.${p}`).digest("base64url");
+  if (sig !== expected) return null;
+  try {
+    return JSON.parse(Buffer.from(p, "base64url").toString());
+  } catch {
+    return null;
+  }
+}
+
+function extractBearer(req: Request): string | null {
+  const auth = req.headers.get("authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/);
+  return m ? m[1] : null;
+}
 
 function getStateDb(): Database {
   return new Database(join(HERMES_HOME, "state.db"));
@@ -693,6 +742,36 @@ listSessions: async () => {
         return await runCronManager(["output", jobId]);
       } catch (e: any) {
         return { outputs: [] };
+      }
+    },
+
+    getAuthStatus: async () => {
+      const s = await loadGuiSettings();
+      return { auth_enabled: !!s.password_hash };
+    },
+
+    login: async ({ password }) => {
+      const s = await loadGuiSettings();
+      if (!s.password_hash) {
+        return { ok: true, token: "" };
+      }
+      try {
+        const valid = await Bun.password.verify(password, s.password_hash);
+        if (!valid) return { ok: false, error: "Invalid password" };
+        const token = signToken({ exp: Date.now() + 24 * 60 * 60 * 1000 });
+        return { ok: true, token };
+      } catch (e: any) {
+        return { ok: false, error: e.message };
+      }
+    },
+
+    setPassword: async ({ password }) => {
+      try {
+        const hash = await Bun.password.hash(password);
+        saveGuiSettings({ password_hash: hash });
+        return { ok: true };
+      } catch (e: any) {
+        return { ok: false, error: e.message };
       }
     },
 
@@ -1361,12 +1440,22 @@ try {
           "Referrer-Policy": "strict-origin-when-cross-origin",
         };
 
+        // Auth state
+        const settings = await loadGuiSettings();
+        const tokenStr = extractBearer(req);
+        const tokenPayload = tokenStr ? (verifyToken(tokenStr) as any) : null;
+        const isAuthRequired = !!settings.password_hash;
+        const isLoggedIn = tokenPayload && tokenPayload.exp > Date.now();
+
         if (req.method === "OPTIONS") {
           return new Response(null, { status: 204, headers: baseHeaders });
         }
 
         // API proxy to Python backend
         if (url.pathname.startsWith("/api/")) {
+          if (isAuthRequired && !isLoggedIn) {
+            return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: baseHeaders });
+          }
           const targetUrl = `http://127.0.0.1:${BACKEND_PORT}${url.pathname.replace("/api", "")}${url.search}`;
           try {
             const proxyRes = await fetch(targetUrl, { method: req.method, headers: req.headers, body: req.body });
@@ -1382,6 +1471,13 @@ try {
           try {
             const body = (await req.json()) as any;
             const { type, id, method, params } = body;
+            const publicMethods = ["getAuthStatus", "login", "getBackendStatus"];
+            if (isAuthRequired && !isLoggedIn && !publicMethods.includes(method)) {
+              return new Response(JSON.stringify({ type: "response", id, error: "Unauthorized" }), {
+                status: 401,
+                headers: { "Content-Type": "application/json", ...baseHeaders },
+              });
+            }
             if (type === "request" && method) {
               const handlerFn = (rpcHandlers.requests as any)[method];
               if (typeof handlerFn === "function") {

@@ -35,11 +35,19 @@ let rpcReqId = 0;
 
 async function rpcRequest(method: string, params?: any): Promise<any> {
   const id = ++rpcReqId;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = localStorage.getItem("hermes-auth-token");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(RPC_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ type: "request", id, method, params: params ?? {} }),
   });
+  if (res.status === 401) {
+    localStorage.removeItem("hermes-auth-token");
+    showLoginOverlay();
+    throw new Error("Session expired. Please sign in again.");
+  }
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }
@@ -2054,10 +2062,67 @@ function openManualInstall() {
 // ---------------------------------------------------------------------------
 // Event Listeners
 // ---------------------------------------------------------------------------
+function showLoginOverlay() {
+  $("#login-overlay")?.classList.remove("hidden");
+  const input = $("#login-password") as HTMLInputElement | null;
+  input?.focus();
+}
+
+function hideLoginOverlay() {
+  $("#login-overlay")?.classList.add("hidden");
+  const err = $("#login-error");
+  if (err) err.textContent = "";
+  const input = $("#login-password") as HTMLInputElement | null;
+  if (input) input.value = "";
+}
+
+async function performLogin() {
+  const input = $("#login-password") as HTMLInputElement | null;
+  const err = $("#login-error");
+  const btn = $("#login-btn") as HTMLButtonElement | null;
+  if (!input) return;
+  const password = input.value;
+  if (!password) {
+    if (err) err.textContent = "Enter password";
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const res = await rpc.request.login({ password });
+    if (res.ok && res.token) {
+      localStorage.setItem("hermes-auth-token", res.token);
+      hideLoginOverlay();
+    } else {
+      if (err) err.textContent = res.error || "Sign in failed";
+    }
+  } catch (e: any) {
+    if (err) err.textContent = e.message || "Network error";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function checkAuth() {
+  try {
+    const status = await rpc.request.getAuthStatus({});
+    if (status.auth_enabled) {
+      const token = localStorage.getItem("hermes-auth-token");
+      if (!token) {
+        showLoginOverlay();
+      }
+    } else {
+      hideLoginOverlay();
+    }
+  } catch {
+    // Backend may not be ready yet; ignore
+  }
+}
+
 function initPage() {
   setDebug("initPage() running...");
   const savedTheme = localStorage.getItem("hermes-theme") || "dark";
   setTheme(savedTheme);
+  checkAuth();
 
   // Connect to backend via HTTP-RPC
   (async () => {
@@ -2400,6 +2465,13 @@ function initPage() {
       }
     }
   }, 800);
+
+  // Login
+  $("#login-btn")?.addEventListener("click", performLogin);
+  const loginInput = $("#login-password") as HTMLInputElement | null;
+  loginInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") performLogin();
+  });
 
   startApprovalPolling();
 }

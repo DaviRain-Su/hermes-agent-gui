@@ -1226,6 +1226,60 @@ html, body {
   display: none;
 }
 
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-overlay.hidden {
+  display: none;
+}
+.login-card {
+  width: 320px;
+  padding: 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+.login-card h2 {
+  margin-bottom: 6px;
+}
+.login-card p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.login-card input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.login-card button {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-error {
+  color: var(--error);
+  font-size: 12px;
+  margin-top: 10px;
+}
+
 /* Memory tabs */
 .memory-tabs {
   display: flex;
