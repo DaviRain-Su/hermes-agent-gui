@@ -191,6 +191,7 @@ async function initAfterBackendReady() {
   loadSessionHistory();
   loadSkills();
   loadProfiles();
+  loadWorkspace();
 }
 
 async function loadCurrentModel() {
@@ -2543,15 +2544,45 @@ function initPage() {
     });
   }
 
-  // Panels: workspace, tasks, todos, spaces, memory
-  $("#workspace-panel")?.querySelector(".panel-header")?.addEventListener("click", () => {
-    $("#workspace-panel")?.classList.toggle("collapsed");
-    if (!$("#workspace-panel")?.classList.contains("collapsed")) loadWorkspace();
+  // Rightpanel
+  $("#rightpanel-close")?.addEventListener("click", () => {
+    $(".rightpanel")?.classList.remove("open");
   });
   $("#preview-close")?.addEventListener("click", closePreview);
   $("#preview-save")?.addEventListener("click", savePreview);
   $("#ws-new-file")?.addEventListener("click", createWsFile);
   $("#ws-new-dir")?.addEventListener("click", createWsDir);
+
+  // Drag resize for rightpanel
+  (function initRightpanelResize() {
+    const handle = $("#rightpanel-resize");
+    const panel = $(".rightpanel") as HTMLElement | null;
+    if (!handle || !panel) return;
+    let startX = 0;
+    let startW = 0;
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startW = panel.getBoundingClientRect().width;
+      handle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      const onMove = (ev: MouseEvent) => {
+        const delta = startX - ev.clientX;
+        const newW = Math.min(500, Math.max(180, startW + delta));
+        panel.style.width = `${newW}px`;
+      };
+      const onUp = () => {
+        handle.classList.remove("dragging");
+        document.body.style.cursor = "";
+        document.removeEventListener("mousemove", onMove as any);
+        document.removeEventListener("mouseup", onUp as any);
+      };
+      document.addEventListener("mousemove", onMove as any);
+      document.addEventListener("mouseup", onUp as any);
+    });
+  })();
+
+  // Panels in sidebar: tasks, todos, spaces, memory
   $("#tasks-panel")?.querySelector(".panel-header")?.addEventListener("click", () => {
     $("#tasks-panel")?.classList.toggle("collapsed");
     if (!$("#tasks-panel")?.classList.contains("collapsed")) {
@@ -2760,17 +2791,25 @@ function startApprovalPolling() {
 
 function mobileSwitchPanel(name: string) {
   const sidebar = $(".sidebar");
+  const rightpanel = $(".rightpanel");
   if (name === "chat") {
     sidebar?.classList.remove("open");
+    rightpanel?.classList.remove("open");
     $("#settings-overlay")?.classList.add("hidden");
   } else if (name === "settings") {
     sidebar?.classList.remove("open");
+    rightpanel?.classList.remove("open");
     openSettings();
+  } else if (name === "workspace") {
+    sidebar?.classList.remove("open");
+    $("#settings-overlay")?.classList.add("hidden");
+    rightpanel?.classList.add("open");
+    loadWorkspace();
   } else {
     sidebar?.classList.add("open");
+    rightpanel?.classList.remove("open");
     $("#settings-overlay")?.classList.add("hidden");
     // Expand target panel, collapse others
-    $("#workspace-panel")?.classList.toggle("collapsed", name !== "workspace");
     $("#tasks-panel")?.classList.toggle("collapsed", name !== "tasks");
     $("#todos-panel")?.classList.toggle("collapsed", name !== "todos");
     $("#memory-panel")?.classList.toggle("collapsed", name !== "memory");

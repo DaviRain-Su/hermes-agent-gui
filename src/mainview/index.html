@@ -82,36 +82,6 @@
         </div>
       </div>
 
-      <!-- Workspace -->
-      <div class="panel-section collapsed" id="workspace-panel">
-        <div class="panel-header" onclick="this.parentElement.classList.toggle('collapsed')">
-          <span>Workspace</span>
-          <div class="workspace-header-actions">
-            <span id="git-badge" class="git-badge"></span>
-            <span class="panel-arrow">▶</span>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div id="workspace-breadcrumb" class="workspace-breadcrumb"></div>
-          <div id="workspace-list" class="workspace-list"><div class="panel-empty">No files</div></div>
-          <div id="workspace-preview" class="workspace-preview hidden">
-            <div class="preview-header">
-              <span id="preview-filename"></span>
-              <button id="preview-close" class="icon-btn small">✕</button>
-            </div>
-            <textarea id="preview-editor" class="preview-editor hidden" spellcheck="false"></textarea>
-            <div id="preview-content" class="preview-content"></div>
-            <div class="preview-actions">
-              <button id="preview-save" class="small-btn hidden">Save</button>
-            </div>
-          </div>
-          <div class="workspace-toolbar">
-            <button id="ws-new-file" class="small-btn">New file</button>
-            <button id="ws-new-dir" class="small-btn">New folder</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Tasks -->
       <div class="panel-section collapsed" id="tasks-panel">
         <div class="panel-header" onclick="this.parentElement.classList.toggle('collapsed')">
@@ -251,6 +221,37 @@
         </div>
       </div>
     </main>
+
+    <!-- Right panel: Workspace -->
+    <aside class="rightpanel" id="rightpanel">
+      <div class="resizer" id="rightpanel-resize"></div>
+      <div class="rightpanel-header">
+        <span>Workspace</span>
+        <div class="workspace-header-actions">
+          <span id="git-badge" class="git-badge"></span>
+          <button id="rightpanel-close" class="icon-btn small">✕</button>
+        </div>
+      </div>
+      <div class="rightpanel-body">
+        <div id="workspace-breadcrumb" class="workspace-breadcrumb"></div>
+        <div id="workspace-list" class="workspace-list"><div class="panel-empty">No files</div></div>
+        <div id="workspace-preview" class="workspace-preview hidden">
+          <div class="preview-header">
+            <span id="preview-filename"></span>
+            <button id="preview-close" class="icon-btn small">✕</button>
+          </div>
+          <textarea id="preview-editor" class="preview-editor hidden" spellcheck="false"></textarea>
+          <div id="preview-content" class="preview-content"></div>
+          <div class="preview-actions">
+            <button id="preview-save" class="small-btn hidden">Save</button>
+          </div>
+        </div>
+        <div class="workspace-toolbar">
+          <button id="ws-new-file" class="small-btn">New file</button>
+          <button id="ws-new-dir" class="small-btn">New folder</button>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <!-- Onboarding Overlay: Install & Setup Wizard -->
