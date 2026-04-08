@@ -1308,6 +1308,37 @@ html, body {
   cursor: not-allowed;
 }
 
+.mic-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.mic-btn:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.mic-btn.recording {
+  color: var(--error);
+  animation: micPulse 1.2s infinite;
+}
+
+@keyframes micPulse {
+  0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.35); }
+  70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
+
 .input-hint {
   text-align: center;
   font-size: 11px;

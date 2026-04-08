@@ -2466,33 +2466,53 @@ function initPage() {
       micBtn.title = "Voice input";
       micBtn.type = "button";
       let rec: any = null;
-      let baseText = "";
+      let prefix = "";
+      let finalText = "";
       micBtn.addEventListener("click", () => {
         if (micBtn.classList.contains("recording")) {
           rec?.stop();
           micBtn.classList.remove("recording");
           return;
         }
-        baseText = input.value ? input.value + " " : "";
+        prefix = input.value;
+        finalText = "";
         micBtn.classList.add("recording");
         rec = new SpeechRecognition();
         rec.continuous = false;
         rec.interimResults = true;
         rec.lang = "zh-CN";
         rec.onresult = (event: any) => {
-          let transcript = "";
+          let interim = "";
+          let fin = finalText;
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            transcript += event.results[i][0].transcript;
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              fin += t;
+            } else {
+              interim += t;
+            }
           }
-          input.value = baseText + transcript;
+          finalText = fin;
+          const committed = prefix + (prefix && !prefix.endsWith(" ") && !prefix.endsWith("\n") && finalText ? " " + finalText : finalText);
+          input.value = committed + interim;
           input.style.height = "auto";
           input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
         };
         rec.onend = () => micBtn.classList.remove("recording");
-        rec.onerror = () => micBtn.classList.remove("recording");
+        rec.onerror = (event: any) => {
+          micBtn.classList.remove("recording");
+          const msgs: Record<string, string> = {
+            "not-allowed": "Microphone access denied.",
+            "no-speech": "No speech detected. Try again.",
+            "network": "Speech recognition unavailable.",
+          };
+          showToast(msgs[event.error] || "Voice input error: " + event.error, 3000);
+        };
         rec.start();
       });
-      inputBox.appendChild(micBtn);
+      const sendBtn = inputBox.querySelector("#send-btn");
+      if (sendBtn) inputBox.insertBefore(micBtn, sendBtn);
+      else inputBox.appendChild(micBtn);
     }
   }
 
