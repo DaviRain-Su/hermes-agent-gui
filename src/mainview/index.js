@@ -1111,6 +1111,13 @@ function appendMessage(role, content, timestamp) {
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (role === "assistant" && document.hidden) {
+    const api = window.electronAPI;
+    if (api?.showNotification) {
+      const snippet = content.replace(/[#*_`\[\]()>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+      api.showNotification("Hermes Agent", snippet || "New message");
+    }
+  }
   if (window.mermaid) {
     try {
       window.mermaid.run({ nodes: contentDiv.querySelectorAll(".mermaid") });
@@ -1468,6 +1475,14 @@ async function streamChatCompletion(body, contentDiv, signal, targetSessionId) {
       _postProcessInlineToolCodes(b.el);
     }
   });
+  if (document.hidden) {
+    const api = window.electronAPI;
+    if (api?.showNotification) {
+      const textBlock = builder.blocks.find((b) => b.type === "text");
+      const snippet = (textBlock?.content || "").replace(/[#*_`\[\]()></]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+      api.showNotification("Hermes Agent", snippet || "New message");
+    }
+  }
   const hasContent = builder.blocks.some((b) => b.type === "text" ? b.content.trim() : true);
   if (!hasContent) {
     contentDiv.innerHTML = `<p style="color:#a3a3a3">No response content received from backend.</p>`;

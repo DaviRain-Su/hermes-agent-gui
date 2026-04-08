@@ -1191,6 +1191,15 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
   messagesEl.appendChild(wrapper);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
+  // Desktop notification for assistant messages when hidden/unfocused
+  if (role === "assistant" && document.hidden) {
+    const api = (window as any).electronAPI;
+    if (api?.showNotification) {
+      const snippet = content.replace(/[#*_`\[\]()>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+      api.showNotification("Hermes Agent", snippet || "New message");
+    }
+  }
+
   // Render mermaid diagrams inside this message
   if ((window as any).mermaid) {
     try {
@@ -1626,6 +1635,20 @@ async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: 
       _postProcessInlineToolCodes(b.el);
     }
   });
+
+  // Desktop notification when stream completes while page is hidden
+  if (document.hidden) {
+    const api = (window as any).electronAPI;
+    if (api?.showNotification) {
+      const textBlock = builder.blocks.find((b) => b.type === "text");
+      const snippet = (textBlock?.content || "")
+        .replace(/[#*_`\[\]()></]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80);
+      api.showNotification("Hermes Agent", snippet || "New message");
+    }
+  }
 
   // If stream finished but we got zero text/tool blocks, try to show a friendly fallback
   const hasContent = builder.blocks.some((b) => (b.type === "text" ? b.content.trim() : true));

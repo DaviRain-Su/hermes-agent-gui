@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, Notification } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
@@ -11,6 +11,32 @@ const MAX_WAIT_MS = 30000;
 let backendProc = null;
 let mainWindow = null;
 let tray = null;
+
+const windowStatePath = path.join(app.getPath('userData'), 'window-state.json');
+
+function loadWindowState() {
+  try {
+    if (fs.existsSync(windowStatePath)) {
+      return JSON.parse(fs.readFileSync(windowStatePath, 'utf-8'));
+    }
+  } catch {}
+  return { width: 1280, height: 900 };
+}
+
+function saveWindowState() {
+  if (!mainWindow) return;
+  const bounds = mainWindow.getNormalBounds ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+  const state = {
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    maximized: mainWindow.isMaximized(),
+  };
+  try {
+    fs.writeFileSync(windowStatePath, JSON.stringify(state));
+  } catch {}
+}
 
 function waitForBackend(url, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -63,15 +89,28 @@ function waitForBackend(url, timeoutMs) {
 }
 
 function createWindow() {
+  const state = loadWindowState();
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
+    width: state.width || 1280,
+    height: state.height || 900,
+    x: state.x,
+    y: state.y,
     title: 'Hermes Agent',
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       devTools: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
+  });
+
+  if (state.maximized) {
+    mainWindow.maximize();
+  }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -105,8 +144,13 @@ function createWindow() {
   mainWindow.on('close', (event) => {
     if (!app.isQuiting) {
       event.preventDefault();
+      saveWindowState();
       mainWindow.hide();
     }
+  });
+
+  ['resize', 'move', 'maximize', 'unmaximize'].forEach((evt) => {
+    mainWindow.on(evt, saveWindowState);
   });
 }
 
@@ -234,6 +278,29 @@ app.whenReady().then(async () => {
     createWindow();
     createTray();
     registerGlobalShortcuts();
+
+    ipcMain.on('show-notification', (_event, title, body) => {
+      if (Notification.isSupported()) {
+        const n = new Notification({
+          title: title || 'Hermes Agent',
+          body: body || 'New message',
+          icon: path.join(__dirname, 'tray-icon.png'),
+        });
+        n.on('click', () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          } else {
+            createWindow();
+          }
+        });
+        n.show();
+      }
+    });
+
+    ipcMain.handle('get-window-focus-state', () => {
+      return mainWindow ? mainWindow.isFocused() && mainWindow.isVisible() : false;
+    });
   } catch (err) {
     console.error('[electron]', err.message);
     if (backendProc && !backendProc.killed) backendProc.kill();
@@ -256,5 +323,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   app.isQuiting = true;
   globalShortcut.unregisterAll();
+  saveWindowState();
   if (backendProc && !backendProc.killed) backendProc.kill('SIGTERM');
 });
