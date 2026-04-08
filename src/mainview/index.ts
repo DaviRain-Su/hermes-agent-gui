@@ -2424,18 +2424,29 @@ function setTheme(theme: string) {
   });
 }
 
-type Snippet = { title: string; content: string };
+type Snippet = { title: string; content: string; isBuiltin?: boolean };
+
+const BUILTIN_SNIPPETS: Snippet[] = [
+  { title: "Explain", content: "Explain the following in simple terms:", isBuiltin: true },
+  { title: "Summarize", content: "Provide a concise summary:", isBuiltin: true },
+  { title: "Refactor", content: "Refactor and improve the following code:", isBuiltin: true },
+  { title: "Write tests", content: "Write comprehensive unit tests for:", isBuiltin: true },
+  { title: "Translate to CN", content: "Translate the following into natural Chinese:", isBuiltin: true },
+  { title: "Translate to EN", content: "Translate the following into natural English:", isBuiltin: true },
+];
 
 function loadSnippets(): Snippet[] {
   try {
-    return JSON.parse(localStorage.getItem("hermes-prompt-snippets") || "[]");
-  } catch {
-    return [];
-  }
+    const stored = JSON.parse(localStorage.getItem("hermes-prompt-snippets") || "[]");
+    if (Array.isArray(stored) && stored.length > 0) return stored;
+  } catch {}
+  return BUILTIN_SNIPPETS.map((s) => ({ ...s }));
 }
 
 function saveSnippets(list: Snippet[]) {
-  localStorage.setItem("hermes-prompt-snippets", JSON.stringify(list));
+  // Only save non-builtin snippets to localStorage
+  const custom = list.filter((s) => !s.isBuiltin);
+  localStorage.setItem("hermes-prompt-snippets", JSON.stringify(custom));
 }
 
 function renderSnippets() {
@@ -2450,12 +2461,17 @@ function renderSnippets() {
   list.forEach((s, idx) => {
     const row = document.createElement("div");
     row.className = "snippet-item";
-    row.innerHTML = `<span>${escapeHtml(s.title)}</span><button data-idx="${idx}" title="Delete">✕</button>`;
-    row.querySelector("button")?.addEventListener("click", () => {
-      list.splice(idx, 1);
-      saveSnippets(list);
-      renderSnippets();
-    });
+    const badge = s.isBuiltin ? `<span class="snippet-badge">built-in</span>` : "";
+    const delBtn = s.isBuiltin ? "" : `<button data-idx="${idx}" title="Delete">✕</button>`;
+    row.innerHTML = `<span>${escapeHtml(s.title)}</span>${badge}${delBtn}`;
+    const btn = row.querySelector("button");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        list.splice(idx, 1);
+        saveSnippets(list);
+        renderSnippets();
+      });
+    }
     container.appendChild(row);
   });
 }
@@ -2467,7 +2483,7 @@ function addSnippet() {
   const title = titleIn.value.trim();
   const content = contentIn.value.trim();
   if (!title || !content) return;
-  const list = loadSnippets();
+  const list = loadSnippets().filter((s) => !s.isBuiltin);
   list.push({ title, content });
   saveSnippets(list);
   titleIn.value = "";
