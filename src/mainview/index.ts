@@ -2189,9 +2189,26 @@ function hideSlashMenu() {
   $(".slash-menu")?.remove();
 }
 
+let systemThemeMq: MediaQueryList | null = null;
+
+function applySystemTheme() {
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
+}
+
 function setTheme(theme: string) {
-  document.documentElement.dataset.theme = theme;
   localStorage.setItem("hermes-theme", theme);
+  if (systemThemeMq) {
+    systemThemeMq.removeEventListener("change", applySystemTheme);
+    systemThemeMq = null;
+  }
+  if (theme === "system") {
+    systemThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
+    systemThemeMq.addEventListener("change", applySystemTheme);
+    applySystemTheme();
+  } else {
+    document.documentElement.dataset.theme = theme;
+  }
   $$(".theme-chip").forEach((btn) => {
     btn.classList.toggle("active", (btn as HTMLButtonElement).dataset.theme === theme);
   });
