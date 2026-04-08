@@ -1720,6 +1720,8 @@ function focusInput() {
   const input = $("#message-input");
   input?.focus();
 }
+window.newChat = newChat;
+window.focusInput = focusInput;
 function showSessionMenu(sessionId, displayName, anchor) {
   const existing = $(".session-action-menu");
   existing?.remove();
