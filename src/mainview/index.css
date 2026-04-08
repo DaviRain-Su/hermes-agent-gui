@@ -1120,6 +1120,33 @@ html, body {
   border-color: var(--accent);
 }
 
+.artifact-preview-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-right: 8px;
+}
+
+.artifact-preview-btn:hover {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+.artifact-preview {
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.artifact-preview.hidden {
+  display: none;
+}
+
 .code-block pre {
   margin: 0;
   border: none;

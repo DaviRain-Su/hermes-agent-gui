@@ -1220,7 +1220,14 @@ function formatContent(text: string): string {
       }
       const prismLang = langMap[lg] || lg || "text";
       const safeLang = escapeHtml(lang || "");
-      return `<div class="code-block"><div class="code-header"><span class="code-lang">${safeLang}</span><button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code class="language-${prismLang}">${safeCode}</code></pre></div>`;
+      const isArtifact = lg === "html" || lg === "svg";
+      const previewBtn = isArtifact
+        ? `<button class="artifact-preview-btn" data-action="toggle-artifact">Preview</button>`
+        : "";
+      const artifactFrame = isArtifact
+        ? `<div class="artifact-preview hidden"><iframe sandbox="allow-scripts" srcdoc="${safeCode.replace(/"/g, '&quot;')}" style="width:100%;height:220px;border:none;border-radius:0 0 8px 8px;background:#fff;"></iframe></div>`
+        : "";
+      return `<div class="code-block ${isArtifact ? "artifact-block" : ""}"><div class="code-header"><span class="code-lang">${safeLang}</span>${previewBtn}<button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code class="language-${prismLang}">${safeCode}</code></pre>${artifactFrame}</div>`;
     }
   );
 
@@ -2515,6 +2522,17 @@ function initPage() {
       else inputBox.appendChild(micBtn);
     }
   }
+
+  // Artifact preview toggle
+  $("#messages")?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest(".artifact-preview-btn") as HTMLButtonElement | null;
+    if (!btn) return;
+    const block = btn.closest(".code-block") as HTMLElement | null;
+    const preview = block?.querySelector(".artifact-preview") as HTMLElement | null;
+    if (!preview) return;
+    const isHidden = preview.classList.toggle("hidden");
+    btn.textContent = isHidden ? "Preview" : "Hide";
+  });
 
   // Mobile sidebar toggle
   $("#menu-toggle")?.addEventListener("click", () => {
