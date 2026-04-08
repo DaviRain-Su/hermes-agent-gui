@@ -1166,6 +1166,7 @@ function appendMessage(role, content, timestamp) {
       window.Prism.highlightAllUnder(contentDiv);
     } catch {}
   }
+  enhanceCodeBlocks(contentDiv);
   return contentDiv;
 }
 function editMessage(wrapper) {
@@ -1248,6 +1249,30 @@ function formatContent(text) {
     return `<p>${p.replace(/\n/g, "<br>")}</p>`;
   });
   return paragraphs.join("");
+}
+function enhanceCodeBlocks(contentDiv) {
+  contentDiv.querySelectorAll("pre").forEach((pre) => {
+    if (pre.closest(".code-block-wrapper"))
+      return;
+    const wrapper = document.createElement("div");
+    wrapper.className = "code-block-wrapper";
+    pre.parentNode?.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    const btn = document.createElement("button");
+    btn.className = "copy-code-btn";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", async () => {
+      const code = pre.querySelector("code")?.textContent || pre.textContent || "";
+      try {
+        await navigator.clipboard.writeText(code);
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy", 1500);
+      } catch {
+        showToast("Copy failed");
+      }
+    });
+    wrapper.appendChild(btn);
+  });
 }
 function postProcessMessage(contentDiv) {
   const raw = contentDiv.innerText;

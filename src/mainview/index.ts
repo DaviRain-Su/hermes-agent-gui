@@ -1256,6 +1256,8 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
     } catch {}
   }
 
+  enhanceCodeBlocks(contentDiv);
+
   return contentDiv;
 }
 
@@ -1368,6 +1370,30 @@ function formatContent(text: string): string {
   });
 
   return paragraphs.join("");
+}
+
+function enhanceCodeBlocks(contentDiv: HTMLElement) {
+  contentDiv.querySelectorAll("pre").forEach((pre) => {
+    if (pre.closest(".code-block-wrapper")) return;
+    const wrapper = document.createElement("div");
+    wrapper.className = "code-block-wrapper";
+    pre.parentNode?.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    const btn = document.createElement("button");
+    btn.className = "copy-code-btn";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", async () => {
+      const code = pre.querySelector("code")?.textContent || pre.textContent || "";
+      try {
+        await navigator.clipboard.writeText(code);
+        btn.textContent = "Copied!";
+        setTimeout(() => (btn.textContent = "Copy"), 1500);
+      } catch {
+        showToast("Copy failed");
+      }
+    });
+    wrapper.appendChild(btn);
+  });
 }
 
 // Post-process assistant messages to extract tool calls into foldable cards
