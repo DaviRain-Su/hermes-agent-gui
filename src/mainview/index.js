@@ -2542,6 +2542,20 @@ function initPage() {
       setTheme(theme);
     });
   });
+  const startMinimizedCheckbox = $("#start-minimized");
+  if (startMinimizedCheckbox) {
+    const api = window.electronAPI;
+    if (api?.getStartMinimized) {
+      api.getStartMinimized().then((v) => {
+        startMinimizedCheckbox.checked = !!v;
+      }).catch(() => {});
+      startMinimizedCheckbox.addEventListener("change", () => {
+        api.setStartMinimized?.(startMinimizedCheckbox.checked);
+      });
+    } else {
+      startMinimizedCheckbox.closest(".setting-row")?.classList.add("hidden");
+    }
+  }
   const savedSendKey = localStorage.getItem("hermes-sendkey") || "enter";
   const sendKeyRadios = $$("input[name='sendkey']");
   sendKeyRadios.forEach((r) => {

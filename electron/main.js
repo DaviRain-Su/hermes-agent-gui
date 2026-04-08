@@ -38,6 +38,23 @@ function saveWindowState() {
   } catch {}
 }
 
+const startMinimizedPath = path.join(app.getPath('userData'), 'start-minimized.json');
+
+function loadStartMinimized() {
+  try {
+    if (fs.existsSync(startMinimizedPath)) {
+      return JSON.parse(fs.readFileSync(startMinimizedPath, 'utf-8')).value === true;
+    }
+  } catch {}
+  return false;
+}
+
+function saveStartMinimized(value) {
+  try {
+    fs.writeFileSync(startMinimizedPath, JSON.stringify({ value }));
+  } catch {}
+}
+
 function waitForBackend(url, timeoutMs) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -110,7 +127,9 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    if (!loadStartMinimized()) {
+      mainWindow.show();
+    }
   });
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -300,6 +319,14 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('get-window-focus-state', () => {
       return mainWindow ? mainWindow.isFocused() && mainWindow.isVisible() : false;
+    });
+
+    ipcMain.handle('get-start-minimized', () => {
+      return loadStartMinimized();
+    });
+
+    ipcMain.on('set-start-minimized', (_event, value) => {
+      saveStartMinimized(!!value);
     });
   } catch (err) {
     console.error('[electron]', err.message);

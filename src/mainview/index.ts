@@ -2776,6 +2776,23 @@ function initPage() {
     });
   });
 
+  // Start minimized (Electron only)
+  const startMinimizedCheckbox = $("#start-minimized") as HTMLInputElement | null;
+  if (startMinimizedCheckbox) {
+    const api = (window as any).electronAPI;
+    if (api?.getStartMinimized) {
+      api.getStartMinimized().then((v: boolean) => {
+        startMinimizedCheckbox.checked = !!v;
+      }).catch(() => {});
+      startMinimizedCheckbox.addEventListener("change", () => {
+        api.setStartMinimized?.(startMinimizedCheckbox.checked);
+      });
+    } else {
+      // Hide the row if not running inside Electron
+      startMinimizedCheckbox.closest(".setting-row")?.classList.add("hidden");
+    }
+  }
+
   // Send key preference
   const savedSendKey = localStorage.getItem("hermes-sendkey") || "enter";
   const sendKeyRadios = $$<HTMLInputElement>("input[name='sendkey']");
