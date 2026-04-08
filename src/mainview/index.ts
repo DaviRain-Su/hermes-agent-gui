@@ -1198,6 +1198,9 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
       const snippet = content.replace(/[#*_`\[\]()>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
       api.showNotification("Hermes Agent", snippet || "New message");
     }
+    if (localStorage.getItem("hermes-notify-sound") === "1") {
+      playNotificationSound();
+    }
   }
 
   // Render mermaid diagrams inside this message
@@ -1647,6 +1650,9 @@ async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: 
         .trim()
         .slice(0, 80);
       api.showNotification("Hermes Agent", snippet || "New message");
+    }
+    if (localStorage.getItem("hermes-notify-sound") === "1") {
+      playNotificationSound();
     }
   }
 
@@ -2099,6 +2105,24 @@ function showToast(message: string, duration = 3000) {
   setTimeout(() => div.remove(), duration);
 }
 
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+  } catch {}
+}
+
 const SLASH_COMMANDS = [
   { name: "new", desc: "Start new chat" },
   { name: "clear", desc: "Clear conversation" },
@@ -2254,6 +2278,14 @@ function openSettings() {
 
 function closeSettings() {
   $("#settings-overlay")?.classList.add("hidden");
+}
+
+function showShortcutsOverlay() {
+  $("#shortcuts-overlay")?.classList.remove("hidden");
+}
+
+function hideShortcutsOverlay() {
+  $("#shortcuts-overlay")?.classList.add("hidden");
 }
 
 // ---------------------------------------------------------------------------
@@ -2823,6 +2855,16 @@ function initPage() {
     });
   }
 
+  // Notification sound toggle
+  const notifySoundToggle = $("#notify-sound") as HTMLInputElement | null;
+  if (notifySoundToggle) {
+    notifySoundToggle.checked = localStorage.getItem("hermes-notify-sound") === "1";
+    notifySoundToggle.addEventListener("change", () => {
+      localStorage.setItem("hermes-notify-sound", notifySoundToggle.checked ? "1" : "0");
+      if (notifySoundToggle.checked) playNotificationSound();
+    });
+  }
+
   // Rightpanel
   $("#rightpanel-close")?.addEventListener("click", () => {
     $(".rightpanel")?.classList.remove("open");
@@ -2923,6 +2965,29 @@ function initPage() {
       e.preventDefault();
       focusInput();
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === "/") {
+      e.preventDefault();
+      showShortcutsOverlay();
+    }
+    if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const active = document.activeElement;
+      const isTyping = active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT");
+      if (!isTyping) {
+        showShortcutsOverlay();
+      }
+    }
+    if (e.key === "Escape") {
+      const shortcuts = $("#shortcuts-overlay");
+      if (shortcuts && !shortcuts.classList.contains("hidden")) {
+        e.preventDefault();
+        hideShortcutsOverlay();
+      }
+    }
+  });
+
+  $("#shortcuts-close")?.addEventListener("click", hideShortcutsOverlay);
+  $("#shortcuts-overlay")?.addEventListener("click", (e) => {
+    if (e.target === $("#shortcuts-overlay")) hideShortcutsOverlay();
   });
 
   // Drag & drop

@@ -1695,6 +1695,69 @@ html, body {
 .login-overlay.hidden {
   display: none;
 }
+
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shortcuts-overlay.hidden {
+  display: none;
+}
+
+.shortcuts-card {
+  width: min(420px, 90vw);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcuts-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.shortcuts-body {
+  padding: 10px 18px 18px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.shortcut-row:last-child {
+  border-bottom: none;
+}
+
+.shortcut-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
 .login-card {
   width: 320px;
   padding: 24px;

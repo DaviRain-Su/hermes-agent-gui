@@ -338,6 +338,12 @@
           </label>
         </div>
         <div class="setting-row">
+          <label class="toggle-label">
+            <input id="notify-sound" type="checkbox" />
+            Notification sound
+          </label>
+        </div>
+        <div class="setting-row">
           <label>Send key</label>
           <div class="sendkey-options">
             <label class="radio-label"><input type="radio" name="sendkey" value="enter" checked /> Enter</label>
@@ -376,6 +382,25 @@
   </div>
 
   <script src="index.js"></script>
+
+  <!-- Shortcuts Cheatsheet -->
+  <div id="shortcuts-overlay" class="shortcuts-overlay hidden">
+    <div class="shortcuts-card">
+      <div class="shortcuts-header">
+        <h3>Keyboard Shortcuts</h3>
+        <button id="shortcuts-close" class="icon-btn small" aria-label="Close">✕</button>
+      </div>
+      <div class="shortcuts-body">
+        <div class="shortcut-row"><span class="shortcut-key">Ctrl/Cmd + K</span><span>Focus composer</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">Ctrl/Cmd + Shift + N</span><span>New chat</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">Ctrl/Cmd + Shift + H</span><span>Show / hide window</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">Enter</span><span>Send message</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">Shift + Enter</span><span>New line</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">?</span><span>Open this cheatsheet</span></div>
+        <div class="shortcut-row"><span class="shortcut-key">Esc</span><span>Close panel / cheatsheet</span></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Mobile bottom navigation -->
   <nav class="mobile-nav">
