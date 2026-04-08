@@ -102,6 +102,8 @@ var previewHasChanges = false;
 var activeApprovalCards = new Map;
 var activeReplyTo = null;
 var draggedSessionId = null;
+var userScrolledUp = false;
+var SCROLL_PAUSE_THRESHOLD = 80;
 var $ = (sel) => document.querySelector(sel);
 var $$ = (sel) => document.querySelectorAll(sel);
 window.$ = $;
@@ -1147,7 +1149,9 @@ function appendMessage(role, content, timestamp) {
   }
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!userScrolledUp) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
   if (role === "assistant" && document.hidden) {
     const api = window.electronAPI;
     if (api?.showNotification) {
@@ -1521,7 +1525,8 @@ async function streamChatCompletion(body, contentDiv, signal, targetSessionId) {
             builder.appendText(delta.content);
             builder.processBuffer();
             const messagesEl = $("#messages");
-            messagesEl.scrollTop = messagesEl.scrollHeight;
+            if (!userScrolledUp)
+              messagesEl.scrollTop = messagesEl.scrollHeight;
           }
           if (parsed.error) {
             throw new Error(parsed.error.message || JSON.stringify(parsed.error));
@@ -1717,7 +1722,8 @@ ${text}`;
   wrapper.appendChild(avatar);
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!userScrolledUp)
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   const fetchTimeout = setTimeout(() => activeStreamController?.abort(), 90000);
   try {
     const body = {
@@ -3432,6 +3438,13 @@ function initPage() {
     if (e.key === "Enter")
       performLogin();
   });
+  const messagesEl = $("#messages");
+  if (messagesEl) {
+    messagesEl.addEventListener("scroll", () => {
+      const atBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - SCROLL_PAUSE_THRESHOLD;
+      userScrolledUp = !atBottom;
+    });
+  }
   $$(".mobile-nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const panel = btn.dataset.panel || "chat";
@@ -3472,7 +3485,8 @@ function showApprovalCard(sessionId, pending) {
     });
   });
   messagesEl.appendChild(card);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!userScrolledUp)
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   activeApprovalCards.set(sessionId, card);
 }
 function startApprovalPolling() {
