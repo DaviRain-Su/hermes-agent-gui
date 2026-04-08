@@ -2618,6 +2618,71 @@ function exportToMarkdown() {
   URL.revokeObjectURL(url);
 }
 
+function exportToPDF() {
+  if (!conversation.length) {
+    showToast("No conversation to print");
+    return;
+  }
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument;
+  if (!doc) { iframe.remove(); return; }
+
+  const isDark = window.getComputedStyle(document.body).backgroundColor.includes("33") || document.documentElement.dataset.theme === "dark";
+  const bg = isDark ? "#1a1a1a" : "#ffffff";
+  const fg = isDark ? "#e5e5e5" : "#1a1a1a";
+  const accent = isDark ? "#f59e0b" : "#d97706";
+
+  let html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Hermes Agent Conversation</title>
+<style>
+  body { margin: 0; padding: 24px; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: ${bg}; color: ${fg}; line-height: 1.5; }
+  h1 { font-size: 18px; margin: 0 0 12px 0; color: ${accent}; }
+  .meta { font-size: 12px; color: #888; margin-bottom: 20px; }
+  .msg { margin-bottom: 16px; page-break-inside: avoid; }
+  .role { font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.4px; color: ${accent}; margin-bottom: 4px; }
+  .content { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .content pre { background: rgba(128,128,128,0.12); padding: 8px; border-radius: 4px; overflow-x: auto; }
+  .content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: rgba(128,128,128,0.12); padding: 1px 4px; border-radius: 3px; }
+  @media print { body { background: #fff !important; color: #000 !important; } }
+</style>
+</head>
+<body>
+<h1>Hermes Agent Conversation</h1>
+<div class="meta">Session: ${escapeHtml(currentSessionId || "—")}<br>Date: ${new Date().toISOString()}</div>
+`;
+
+  conversation.forEach((msg) => {
+    const roleLabel = msg.role === "user" ? "User" : "Assistant";
+    html += `<div class="msg"><div class="role">${roleLabel}</div><div class="content">${formatContentForPrint(msg.content || "")}</div></div>`;
+  });
+
+  html += "</body></html>";
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  requestAnimationFrame(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {}
+    setTimeout(() => iframe.remove(), 3000);
+  });
+}
+
+function formatContentForPrint(content: string): string {
+  return escapeHtml(content)
+    .replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+}
+
 function renderReplyBar() {
   const bar = $("#reply-bar");
   const preview = $("#reply-preview");
@@ -3170,6 +3235,7 @@ function initPage() {
 
   // Chat header actions
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
+  $("#export-pdf-btn")?.addEventListener("click", exportToPDF);
   $("#search-btn")?.addEventListener("click", () => toggleSearch(true));
 
   // Search bar
