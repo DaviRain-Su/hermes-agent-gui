@@ -2258,6 +2258,56 @@ function hideSlashMenu() {
   $(".slash-menu")?.remove();
 }
 
+let cachedWorkspaceEntries: any[] = [];
+
+function hideMentionMenu() {
+  $(".mention-menu")?.remove();
+}
+
+async function updateMentionMenu() {
+  hideMentionMenu();
+  const input = $("#message-input") as HTMLTextAreaElement | null;
+  if (!input) return;
+  const textBefore = input.value.slice(0, input.selectionStart || 0);
+  const match = textBefore.match(/(^|\s)@([^\s]*)$/);
+  if (!match) return;
+
+  if (cachedWorkspaceEntries.length === 0) {
+    try {
+      const data = await rpc.request.listWorkspace({ path: workspacePath, sessionId: currentSessionId || undefined });
+      cachedWorkspaceEntries = (data.entries || []).filter((e: any) => !e.isDirectory);
+    } catch {}
+  }
+  const query = match[2].toLowerCase();
+  const items = cachedWorkspaceEntries.filter((e: any) => e.name.toLowerCase().includes(query));
+  if (items.length === 0) return;
+
+  const rect = input.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.className = "mention-menu slash-menu";
+  menu.style.cssText = `position:fixed;left:${rect.left}px;bottom:${window.innerHeight - rect.top + 4}px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:6px 0;z-index:1000;min-width:180px;box-shadow:0 8px 30px rgba(0,0,0,0.25);`;
+
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "mention-item slash-item" + (idx === 0 ? " active" : "");
+    row.style.cssText = "padding:8px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;";
+    row.innerHTML = `<span>@${escapeHtml(item.name)}</span><span style=\"color:var(--text-secondary);font-size:12px;\">file</span>`;
+    row.addEventListener("mouseenter", () => {
+      menu.querySelectorAll(".mention-item").forEach((i) => i.classList.remove("active"));
+      row.classList.add("active");
+    });
+    row.addEventListener("click", () => {
+      const before = textBefore.slice(0, textBefore.lastIndexOf("@"));
+      input.value = before + `[file:${escapeHtml(item.relPath || item.name)}] `;
+      hideMentionMenu();
+      input.focus();
+    });
+    menu.appendChild(row);
+  });
+
+  document.body.appendChild(menu);
+}
+
 let systemThemeMq: MediaQueryList | null = null;
 
 function applySystemTheme() {
@@ -2716,28 +2766,35 @@ function initPage() {
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
       updateSlashMenu();
+      updateMentionMenu();
     });
     input.addEventListener("keydown", (e) => {
-      const menu = $(".slash-menu");
-      if (!menu) return;
-      const items = Array.from(menu.querySelectorAll<HTMLDivElement>(".slash-item"));
-      let active = items.findIndex((i) => i.classList.contains("active"));
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        if (active >= 0) items[active].classList.remove("active");
-        active = (active + 1) % items.length;
-        items[active].classList.add("active");
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        if (active >= 0) items[active].classList.remove("active");
-        active = (active - 1 + items.length) % items.length;
-        items[active].classList.add("active");
-      } else if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        if (active >= 0) items[active].click();
-        else if (items[0]) items[0].click();
-      } else if (e.key === "Escape") {
-        hideSlashMenu();
+      const slashMenu = $(".slash-menu:not(.mention-menu)");
+      const mentionMenu = $(".mention-menu");
+      const menu = slashMenu || mentionMenu;
+      if (menu) {
+        const selector = mentionMenu ? ".mention-item" : ".slash-item";
+        const items = Array.from(menu.querySelectorAll<HTMLDivElement>(selector));
+        let active = items.findIndex((i) => i.classList.contains("active"));
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (active >= 0) items[active].classList.remove("active");
+          active = (active + 1) % items.length;
+          items[active].classList.add("active");
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (active >= 0) items[active].classList.remove("active");
+          active = (active - 1 + items.length) % items.length;
+          items[active].classList.add("active");
+        } else if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          if (active >= 0) items[active].click();
+          else if (items[0]) items[0].click();
+        } else if (e.key === "Escape") {
+          hideSlashMenu();
+          hideMentionMenu();
+        }
+        return;
       }
     });
 
