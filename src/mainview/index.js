@@ -1152,6 +1152,7 @@ function appendMessage(role, content, timestamp) {
   if (!userScrolledUp) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
+  updateScrollIndicator();
   if (role === "assistant" && document.hidden) {
     const api = window.electronAPI;
     if (api?.showNotification) {
@@ -1527,6 +1528,7 @@ async function streamChatCompletion(body, contentDiv, signal, targetSessionId) {
             const messagesEl = $("#messages");
             if (!userScrolledUp)
               messagesEl.scrollTop = messagesEl.scrollHeight;
+            updateScrollIndicator();
           }
           if (parsed.error) {
             throw new Error(parsed.error.message || JSON.stringify(parsed.error));
@@ -1724,6 +1726,7 @@ ${text}`;
   messagesEl.appendChild(wrapper);
   if (!userScrolledUp)
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateScrollIndicator();
   const fetchTimeout = setTimeout(() => activeStreamController?.abort(), 90000);
   try {
     const body = {
@@ -1856,6 +1859,16 @@ function updateComposerCount() {
   const chars = text.length;
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   el.textContent = `${words} words · ${chars} chars`;
+}
+function updateScrollIndicator() {
+  const btn = $("#scroll-to-bottom");
+  if (!btn)
+    return;
+  if (userScrolledUp) {
+    btn.classList.remove("hidden");
+  } else {
+    btn.classList.add("hidden");
+  }
 }
 window.newChat = newChat;
 window.focusInput = focusInput;
@@ -3443,8 +3456,17 @@ function initPage() {
     messagesEl.addEventListener("scroll", () => {
       const atBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - SCROLL_PAUSE_THRESHOLD;
       userScrolledUp = !atBottom;
+      updateScrollIndicator();
     });
   }
+  $("#scroll-to-bottom")?.addEventListener("click", () => {
+    const messagesEl2 = $("#messages");
+    if (messagesEl2) {
+      messagesEl2.scrollTop = messagesEl2.scrollHeight;
+      userScrolledUp = false;
+      updateScrollIndicator();
+    }
+  });
   $$(".mobile-nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const panel = btn.dataset.panel || "chat";
@@ -3487,6 +3509,7 @@ function showApprovalCard(sessionId, pending) {
   messagesEl.appendChild(card);
   if (!userScrolledUp)
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateScrollIndicator();
   activeApprovalCards.set(sessionId, card);
 }
 function startApprovalPolling() {

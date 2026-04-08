@@ -1235,6 +1235,7 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
   if (!userScrolledUp) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
+  updateScrollIndicator();
 
   // Desktop notification for assistant messages when hidden/unfocused
   if (role === "assistant" && document.hidden) {
@@ -1686,6 +1687,7 @@ async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: 
             builder.processBuffer();
             const messagesEl = $("#messages")!;
             if (!userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
+            updateScrollIndicator();
           }
           // Some backends wrap errors inside SSE data
           if (parsed.error) {
@@ -1929,6 +1931,7 @@ async function sendMessage() {
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
   if (!userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateScrollIndicator();
 
   const fetchTimeout = setTimeout(() => activeStreamController?.abort(), 90000);
 
@@ -2065,6 +2068,16 @@ function updateComposerCount() {
   const chars = text.length;
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   el.textContent = `${words} words · ${chars} chars`;
+}
+
+function updateScrollIndicator() {
+  const btn = $("#scroll-to-bottom");
+  if (!btn) return;
+  if (userScrolledUp) {
+    btn.classList.remove("hidden");
+  } else {
+    btn.classList.add("hidden");
+  }
 }
 
 (window as any).newChat = newChat;
@@ -3734,8 +3747,19 @@ function initPage() {
     messagesEl.addEventListener("scroll", () => {
       const atBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - SCROLL_PAUSE_THRESHOLD;
       userScrolledUp = !atBottom;
+      updateScrollIndicator();
     });
   }
+
+  // Scroll to bottom button
+  $("#scroll-to-bottom")?.addEventListener("click", () => {
+    const messagesEl = $("#messages");
+    if (messagesEl) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      userScrolledUp = false;
+      updateScrollIndicator();
+    }
+  });
 
   // Mobile nav
   $$(".mobile-nav-btn").forEach((btn) => {
@@ -3782,6 +3806,7 @@ function showApprovalCard(sessionId: string, pending: any) {
   });
   messagesEl.appendChild(card);
   if (!userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateScrollIndicator();
   activeApprovalCards.set(sessionId, card);
 }
 

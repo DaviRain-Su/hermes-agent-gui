@@ -1729,6 +1729,29 @@ html, body {
   white-space: nowrap;
 }
 
+.scroll-to-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 88px;
+  z-index: 10;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  opacity: 1;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.scroll-to-bottom.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+}
+
 .composer-metrics {
   display: flex;
   flex-direction: column;
