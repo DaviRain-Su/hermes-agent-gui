@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hermes Agent</title>
+  <link rel="stylesheet" href="index.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>Hermes</h1>
+        <button id="new-chat-btn" class="icon-btn" title="New Chat (Ctrl+N)">+</button>
+      </div>
+
+      <!-- Sessions list -->
+      <div class="sessions-wrapper">
+        <div class="sessions-title">History</div>
+        <div id="sessions-list" class="sessions-list">
+          <div class="sessions-empty">No sessions yet</div>
+        </div>
+      </div>
+
+      <!-- Model & Status -->
+      <div class="sidebar-footer">
+        <div class="model-panel">
+          <label>Provider</label>
+          <select id="provider-select">
+            <option value="">auto</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Gemini</option>
+            <option value="kimi-coding">Kimi Coding</option>
+            <option value="moonshot">Moonshot</option>
+            <option value="copilot">GitHub Copilot</option>
+            <option value="opencode">OpenCode</option>
+            <option value="zai">Z.AI</option>
+            <option value="minimax">MiniMax</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="xai">xAI</option>
+          </select>
+
+          <label>Model</label>
+          <div class="model-input-row">
+            <input id="model-input" type="text" placeholder="e.g. kimi-k2.5" />
+            <button id="apply-model-btn" class="icon-btn small" title="Apply & Restart">↻</button>
+          </div>
+        </div>
+
+        <div class="status-row">
+          <div id="backend-status" class="status-badge offline">Offline</div>
+          <button id="restart-backend-btn" class="small-btn">Restart</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main class="chat-container" id="chat-container">
+      <!-- Drop overlay -->
+      <div id="drop-overlay" class="drop-overlay">
+        <div class="drop-overlay-content">
+          <div class="drop-icon">📎</div>
+          <div>Drop files to attach</div>
+        </div>
+      </div>
+
+      <div id="messages" class="messages">
+        <div class="empty-state">
+          <h2>Welcome to Hermes Agent</h2>
+          <p>Your local AI assistant with tool-calling superpowers.</p>
+          <p class="hint">Drag & drop files here to attach them.</p>
+        </div>
+      </div>
+
+      <!-- Attachment chips -->
+      <div id="attachments" class="attachments"></div>
+
+      <div class="input-area">
+        <div class="input-box">
+          <textarea
+            id="message-input"
+            rows="1"
+            placeholder="Ask anything... (Ctrl+K to focus)"
+            autofocus
+          ></textarea>
+          <button id="send-btn" class="send-btn" disabled>Send</button>
+        </div>
+        <div class="input-hint">
+          Hermes can browse the web, run code, and use tools. Streaming enabled.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Onboarding Overlay: Install & Setup Wizard -->
+  <div id="onboarding-overlay" class="onboarding-overlay hidden">
+    <div class="onboarding-card">
+      <h2 id="onboarding-title">欢迎使用 Hermes Agent</h2>
+      <p id="onboarding-desc" class="onboarding-desc">正在检测环境...</p>
+
+      <!-- Install Wizard -->
+      <div id="install-panel" class="onboarding-panel hidden">
+        <div id="install-progress-container" class="progress-container hidden">
+          <div class="progress-bar">
+            <div id="install-progress-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-text" id="install-progress-text">0%</div>
+        </div>
+        <div id="install-log" class="install-log hidden"></div>
+        <div class="onboarding-actions" id="install-actions">
+          <button id="btn-start-install" class="primary-btn">开始安装</button>
+          <button id="btn-cancel-install" class="secondary-btn hidden">取消</button>
+        </div>
+      </div>
+
+      <!-- Setup Wizard -->
+      <div id="setup-panel" class="onboarding-panel hidden">
+        <form id="setup-form" class="setup-form"></form>
+        <div class="onboarding-actions">
+          <button id="btn-submit-setup" type="submit" form="setup-form" class="primary-btn">保存并启动</button>
+        </div>
+        <div id="setup-error" class="setup-error hidden"></div>
+      </div>
+
+      <!-- Error / Retry -->
+      <div id="error-panel" class="onboarding-panel hidden">
+        <div id="error-message" class="error-message"></div>
+        <div class="onboarding-actions">
+          <button id="btn-retry" class="primary-btn">重试</button>
+          <button id="btn-manual-install" class="secondary-btn">手动安装</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="index.js"></script>
+</body>
+</html>
