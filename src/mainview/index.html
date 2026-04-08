@@ -194,8 +194,17 @@
         <button id="menu-toggle" class="icon-btn menu-toggle" aria-label="Open sidebar">☰</button>
         <span class="chat-title">Hermes Agent</span>
         <button id="export-md-btn" class="icon-btn" title="Export Markdown" aria-label="Export Markdown">↓</button>
+        <button id="search-btn" class="icon-btn" title="Search messages" aria-label="Search messages">🔍</button>
         <button id="settings-btn" class="icon-btn settings-btn" aria-label="Settings">⚙</button>
       </header>
+
+      <div id="chat-search-bar" class="chat-search-bar hidden">
+        <input id="chat-search-input" type="text" placeholder="Search messages..." />
+        <span id="chat-search-count" class="search-count">0/0</span>
+        <button id="chat-search-prev" class="icon-btn small" aria-label="Previous match">▲</button>
+        <button id="chat-search-next" class="icon-btn small" aria-label="Next match">▼</button>
+        <button id="chat-search-close" class="icon-btn small" aria-label="Close search">✕</button>
+      </div>
 
       <!-- Drop overlay -->
       <div id="drop-overlay" class="drop-overlay">

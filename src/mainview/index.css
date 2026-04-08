@@ -787,6 +787,52 @@ html, body {
   font-size: 15px;
 }
 
+.chat-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-search-bar.hidden {
+  display: none;
+}
+
+.chat-search-bar input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.search-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 36px;
+  text-align: center;
+}
+
+.search-highlight {
+  background: rgba(245, 158, 11, 0.35);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.search-highlight-active {
+  background: rgba(245, 158, 11, 0.85);
+  color: #000;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .menu-toggle {
   font-size: 18px;
 }

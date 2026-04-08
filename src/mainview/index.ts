@@ -2399,6 +2399,105 @@ function addSnippet() {
   renderSnippets();
 }
 
+let searchMatches: HTMLElement[] = [];
+let activeSearchIndex = -1;
+
+function toggleSearch(show?: boolean) {
+  const bar = $("#chat-search-bar");
+  if (!bar) return;
+  const shouldShow = show !== undefined ? show : bar.classList.contains("hidden");
+  if (shouldShow) {
+    bar.classList.remove("hidden");
+    const input = $("#chat-search-input") as HTMLInputElement | null;
+    input?.focus();
+    input?.select();
+  } else {
+    bar.classList.add("hidden");
+    clearSearch();
+  }
+}
+
+function clearSearch() {
+  searchMatches = [];
+  activeSearchIndex = -1;
+  const countEl = $("#chat-search-count");
+  if (countEl) countEl.textContent = "0/0";
+  $$<HTMLElement>("mark.search-highlight, mark.search-highlight-active").forEach((mark) => {
+    const parent = mark.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+      (parent as HTMLElement).normalize?.();
+    }
+  });
+}
+
+function highlightTextNodes(node: Node, query: string) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || "";
+    const lower = text.toLowerCase();
+    const qlower = query.toLowerCase();
+    const idx = lower.indexOf(qlower);
+    if (idx === -1) return false;
+    const parent = node.parentNode;
+    if (!parent) return false;
+    const frag = document.createDocumentFragment();
+    let lastIndex = 0;
+    let cur = lower.indexOf(qlower, lastIndex);
+    while (cur !== -1) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex, cur)));
+      const mark = document.createElement("mark");
+      mark.className = "search-highlight";
+      mark.textContent = text.slice(cur, cur + query.length);
+      frag.appendChild(mark);
+      lastIndex = cur + query.length;
+      cur = lower.indexOf(qlower, lastIndex);
+    }
+    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    parent.replaceChild(frag, node);
+    return true;
+  }
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "mark" || tag === "script" || tag === "style" || tag === "pre" || tag === "code") return false;
+    const children = Array.from(el.childNodes);
+    children.forEach((child) => highlightTextNodes(child, query));
+  }
+  return false;
+}
+
+function performSearch(query: string) {
+  clearSearch();
+  const q = query.trim();
+  if (!q) return;
+  $$<HTMLElement>("#messages .message-content").forEach((content) => {
+    highlightTextNodes(content, q);
+  });
+  searchMatches = $$<HTMLElement>("mark.search-highlight");
+  if (searchMatches.length > 0) {
+    activeSearchIndex = -1;
+    navigateSearch(1);
+  } else {
+    const countEl = $("#chat-search-count");
+    if (countEl) countEl.textContent = "0/0";
+  }
+}
+
+function navigateSearch(dir: 1 | -1) {
+  if (searchMatches.length === 0) return;
+  if (activeSearchIndex >= 0 && activeSearchIndex < searchMatches.length) {
+    searchMatches[activeSearchIndex].classList.remove("search-highlight-active");
+    searchMatches[activeSearchIndex].classList.add("search-highlight");
+  }
+  activeSearchIndex = (activeSearchIndex + dir + searchMatches.length) % searchMatches.length;
+  const mark = searchMatches[activeSearchIndex];
+  mark.classList.remove("search-highlight");
+  mark.classList.add("search-highlight-active");
+  mark.scrollIntoView({ behavior: "smooth", block: "center" });
+  const countEl = $("#chat-search-count");
+  if (countEl) countEl.textContent = `${activeSearchIndex + 1}/${searchMatches.length}`;
+}
+
 function showSnippetMenu() {
   hideMentionMenu();
   hideSlashMenu();
@@ -3052,6 +3151,14 @@ function initPage() {
 
   // Chat header actions
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
+  $("#search-btn")?.addEventListener("click", () => toggleSearch(true));
+
+  // Search bar
+  $("#chat-search-close")?.addEventListener("click", () => toggleSearch(false));
+  $("#chat-search-prev")?.addEventListener("click", () => navigateSearch(-1));
+  $("#chat-search-next")?.addEventListener("click", () => navigateSearch(1));
+  const searchInput = $("#chat-search-input") as HTMLInputElement | null;
+  searchInput?.addEventListener("input", () => performSearch(searchInput.value));
 
   // Snippet actions
   $("#snippet-btn")?.addEventListener("click", showSnippetMenu);
@@ -3277,6 +3384,10 @@ function initPage() {
       e.preventDefault();
       showShortcutsOverlay();
     }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      toggleSearch(true);
+    }
     if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
       const active = document.activeElement;
       const isTyping = active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT");
@@ -3285,6 +3396,12 @@ function initPage() {
       }
     }
     if (e.key === "Escape") {
+      const searchBar = $("#chat-search-bar");
+      if (searchBar && !searchBar.classList.contains("hidden")) {
+        e.preventDefault();
+        toggleSearch(false);
+        return;
+      }
       const shortcuts = $("#shortcuts-overlay");
       if (shortcuts && !shortcuts.classList.contains("hidden")) {
         e.preventDefault();
