@@ -1088,6 +1088,20 @@ html, body {
   opacity: 1;
 }
 
+.code-lang-badge {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  background: rgba(128, 128, 128, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 .message-avatar {
   width: 28px;
   height: 28px;

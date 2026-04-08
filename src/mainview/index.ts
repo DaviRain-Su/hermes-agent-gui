@@ -1436,6 +1436,14 @@ function enhanceCodeBlocks(contentDiv: HTMLElement) {
     wrapper.className = "code-block-wrapper";
     pre.parentNode?.insertBefore(wrapper, pre);
     wrapper.appendChild(pre);
+    const codeEl = pre.querySelector("code");
+    const langMatch = codeEl?.className.match(/language-(\w+)/);
+    if (langMatch) {
+      const badge = document.createElement("span");
+      badge.className = "code-lang-badge";
+      badge.textContent = langMatch[1];
+      wrapper.appendChild(badge);
+    }
     const btn = document.createElement("button");
     btn.className = "copy-code-btn";
     btn.textContent = "Copy";
