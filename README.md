@@ -34,6 +34,8 @@ Grab the latest release from the [Releases](https://github.com/DaviRain-Su/herme
 |---|---|---|
 | Linux (universal) | `.AppImage` | Download, `chmod +x`, and run |
 | Debian / Ubuntu | `.deb` | `sudo dpkg -i hermes-agent-gui_*.deb` |
+| macOS (Apple Silicon) | `.dmg` | Open the DMG and drag **Hermes Agent** to **Applications** |
+| macOS ( Apple Silicon ) | `.zip` | Extract and run **Hermes Agent.app** |
 
 After installation, launch **Hermes Agent** from your applications menu or run it from the terminal.
 
@@ -64,8 +66,10 @@ npm run dist
 ```
 
 Artifacts will appear in `dist-electron/`:
-- `Hermes Agent-0.1.0.AppImage`
-- `hermes-agent-gui_0.1.0_amd64.deb`
+- `Hermes Agent-0.2.0.AppImage`
+- `hermes-agent-gui_0.2.0_amd64.deb`
+- `Hermes Agent-0.2.0.dmg`
+- `Hermes Agent-0.2.0-mac.zip`
 
 ## Architecture
 
@@ -115,7 +119,7 @@ This repo uses GitHub Actions to build and publish releases automatically.
    git tag v0.2.0
    git push origin v0.2.0
    ```
-3. GitHub Actions builds the AppImage and deb packages and uploads them to the release page.
+3. GitHub Actions builds Linux (AppImage / deb) and macOS (DMG / zip) packages and uploads them to the release page.
 
 ## License
 

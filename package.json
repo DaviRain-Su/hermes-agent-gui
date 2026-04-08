@@ -37,6 +37,14 @@
       "provider": "github",
       "releaseType": "release"
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
     "linux": {
       "target": [
         {
