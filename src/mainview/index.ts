@@ -1107,6 +1107,37 @@ async function loadSessionMessages(sessionId: string, displayName?: string) {
 // ---------------------------------------------------------------------------
 // Chat UI
 // ---------------------------------------------------------------------------
+function toggleTTS(text: string, btn: HTMLButtonElement) {
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+  if (btn.classList.contains("playing")) {
+    synth.cancel();
+    btn.classList.remove("playing");
+    btn.textContent = "🔊";
+    return;
+  }
+  // Stop any other playing button
+  $$(".tts-btn.playing").forEach((b) => {
+    b.classList.remove("playing");
+    b.textContent = "🔊";
+  });
+  const stripMarkdown = (s: string) => s.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]+`/g, " ").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*_\-\[\]]/g, " ").replace(/\s+/g, " ").trim();
+  const utter = new SpeechSynthesisUtterance(stripMarkdown(text));
+  utter.lang = "zh-CN";
+  utter.onend = () => {
+    btn.classList.remove("playing");
+    btn.textContent = "🔊";
+  };
+  utter.onerror = () => {
+    btn.classList.remove("playing");
+    btn.textContent = "🔊";
+  };
+  btn.classList.add("playing");
+  btn.textContent = "⏹";
+  synth.cancel();
+  synth.speak(utter);
+}
+
 function appendMessage(role: "user" | "assistant", content: string, timestamp?: string): HTMLElement {
   const messagesEl = $("#messages")!;
 
@@ -1147,6 +1178,14 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
     editBtn.addEventListener("click", () => editMessage(wrapper));
     actions.appendChild(editBtn);
     wrapper.appendChild(actions);
+  }
+  if (role === "assistant") {
+    const ttsBtn = document.createElement("button");
+    ttsBtn.className = "tts-btn";
+    ttsBtn.textContent = "🔊";
+    ttsBtn.title = "Read aloud";
+    ttsBtn.addEventListener("click", () => toggleTTS(content, ttsBtn));
+    contentDiv.appendChild(ttsBtn);
   }
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);

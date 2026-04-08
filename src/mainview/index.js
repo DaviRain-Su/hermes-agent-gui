@@ -1034,6 +1034,36 @@ async function loadSessionMessages(sessionId, displayName) {
     console.error("Failed to load session messages:", e);
   }
 }
+function toggleTTS(text, btn) {
+  const synth = window.speechSynthesis;
+  if (!synth)
+    return;
+  if (btn.classList.contains("playing")) {
+    synth.cancel();
+    btn.classList.remove("playing");
+    btn.textContent = "\uD83D\uDD0A";
+    return;
+  }
+  $$(".tts-btn.playing").forEach((b) => {
+    b.classList.remove("playing");
+    b.textContent = "\uD83D\uDD0A";
+  });
+  const stripMarkdown = (s) => s.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]+`/g, " ").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*_\-\[\]]/g, " ").replace(/\s+/g, " ").trim();
+  const utter = new SpeechSynthesisUtterance(stripMarkdown(text));
+  utter.lang = "zh-CN";
+  utter.onend = () => {
+    btn.classList.remove("playing");
+    btn.textContent = "\uD83D\uDD0A";
+  };
+  utter.onerror = () => {
+    btn.classList.remove("playing");
+    btn.textContent = "\uD83D\uDD0A";
+  };
+  btn.classList.add("playing");
+  btn.textContent = "⏹";
+  synth.cancel();
+  synth.speak(utter);
+}
 function appendMessage(role, content, timestamp) {
   const messagesEl = $("#messages");
   const emptyState = messagesEl.querySelector(".empty-state");
@@ -1069,6 +1099,14 @@ function appendMessage(role, content, timestamp) {
     editBtn.addEventListener("click", () => editMessage(wrapper));
     actions.appendChild(editBtn);
     wrapper.appendChild(actions);
+  }
+  if (role === "assistant") {
+    const ttsBtn = document.createElement("button");
+    ttsBtn.className = "tts-btn";
+    ttsBtn.textContent = "\uD83D\uDD0A";
+    ttsBtn.title = "Read aloud";
+    ttsBtn.addEventListener("click", () => toggleTTS(content, ttsBtn));
+    contentDiv.appendChild(ttsBtn);
   }
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
