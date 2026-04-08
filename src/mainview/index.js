@@ -2079,6 +2079,36 @@ function showShortcutsOverlay() {
 function hideShortcutsOverlay() {
   $("#shortcuts-overlay")?.classList.add("hidden");
 }
+function exportToMarkdown() {
+  if (!conversation.length) {
+    showToast("No conversation to export");
+    return;
+  }
+  const lines = [];
+  lines.push(`# Hermes Agent Conversation`);
+  lines.push("");
+  if (currentSessionId)
+    lines.push(`Session: ${currentSessionId}`);
+  lines.push(`Date: ${new Date().toISOString()}`);
+  lines.push("");
+  conversation.forEach((msg) => {
+    const roleTitle = msg.role === "user" ? "User" : "Assistant";
+    lines.push(`## ${roleTitle}`);
+    lines.push("");
+    lines.push(msg.content || "");
+    lines.push("");
+  });
+  const blob = new Blob([lines.join(`
+`)], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `hermes-${currentSessionId || "chat"}-${Date.now()}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 var onboardingResolved = false;
 var installLogBuffer = "";
 function showOverlay() {
@@ -2559,6 +2589,7 @@ function initPage() {
     $(".sidebar")?.classList.remove("open");
     $("#mobile-overlay")?.classList.remove("visible");
   });
+  $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
   $("#settings-btn")?.addEventListener("click", openSettings);
   $("#settings-close")?.addEventListener("click", closeSettings);
   $("#settings-overlay")?.addEventListener("click", (e) => {

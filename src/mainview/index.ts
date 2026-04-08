@@ -2288,6 +2288,35 @@ function hideShortcutsOverlay() {
   $("#shortcuts-overlay")?.classList.add("hidden");
 }
 
+function exportToMarkdown() {
+  if (!conversation.length) {
+    showToast("No conversation to export");
+    return;
+  }
+  const lines: string[] = [];
+  lines.push(`# Hermes Agent Conversation`);
+  lines.push("");
+  if (currentSessionId) lines.push(`Session: ${currentSessionId}`);
+  lines.push(`Date: ${new Date().toISOString()}`);
+  lines.push("");
+  conversation.forEach((msg) => {
+    const roleTitle = msg.role === "user" ? "User" : "Assistant";
+    lines.push(`## ${roleTitle}`);
+    lines.push("");
+    lines.push(msg.content || "");
+    lines.push("");
+  });
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `hermes-${currentSessionId || "chat"}-${Date.now()}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ---------------------------------------------------------------------------
 // Onboarding (Install + Setup Wizard)
 // ---------------------------------------------------------------------------
@@ -2792,6 +2821,9 @@ function initPage() {
     $(".sidebar")?.classList.remove("open");
     $("#mobile-overlay")?.classList.remove("visible");
   });
+
+  // Chat header actions
+  $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
 
   // Settings panel
   $("#settings-btn")?.addEventListener("click", openSettings);
