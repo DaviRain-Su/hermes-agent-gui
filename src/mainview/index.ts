@@ -1075,10 +1075,17 @@ async function loadSessionHistory() {
       if (activeProjectFilter === "") return true;
       return s.project_id === activeProjectFilter;
     });
-    if (filtered.length === 0) {
-      container.innerHTML = '<div class="sessions-empty">No sessions in this project</div>';
+    const search = (($("#session-search-input") as HTMLInputElement | null)?.value || "").toLowerCase();
+    const searched = filtered.filter((s: any) => {
+      if (!search) return true;
+      const name = (s.display_name || "").toLowerCase();
+      const tags = (s.tags || []).join(" ").toLowerCase();
+      return name.includes(search) || tags.includes(search);
+    });
+    if (searched.length === 0) {
+      container.innerHTML = '<div class="sessions-empty">No matching sessions</div>';
     }
-    filtered.forEach((s: any) => {
+    searched.forEach((s: any) => {
       const el = document.createElement("div");
       el.className = "session-item";
       if (s.pinned) el.classList.add("pinned");
@@ -3815,6 +3822,11 @@ function initPage() {
 
   // Projects
   $("#project-add-btn")?.addEventListener("click", createProjectFromPrompt);
+
+  // Session list search
+  $("#session-search-input")?.addEventListener("input", () => {
+    loadSessionHistory();
+  });
 
   startApprovalPolling();
 }

@@ -243,6 +243,20 @@ html, body {
   letter-spacing: 0.4px;
 }
 
+.session-search {
+  padding: 6px 8px 4px;
+}
+
+.session-search input {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
 .sessions-list {
   flex: 1;
   overflow-y: auto;

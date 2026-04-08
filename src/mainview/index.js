@@ -1006,10 +1006,18 @@ async function loadSessionHistory() {
         return true;
       return s.project_id === activeProjectFilter;
     });
-    if (filtered.length === 0) {
-      container.innerHTML = '<div class="sessions-empty">No sessions in this project</div>';
+    const search = ($("#session-search-input")?.value || "").toLowerCase();
+    const searched = filtered.filter((s) => {
+      if (!search)
+        return true;
+      const name = (s.display_name || "").toLowerCase();
+      const tags = (s.tags || []).join(" ").toLowerCase();
+      return name.includes(search) || tags.includes(search);
+    });
+    if (searched.length === 0) {
+      container.innerHTML = '<div class="sessions-empty">No matching sessions</div>';
     }
-    filtered.forEach((s) => {
+    searched.forEach((s) => {
       const el = document.createElement("div");
       el.className = "session-item";
       if (s.pinned)
@@ -3516,6 +3524,9 @@ function initPage() {
     });
   });
   $("#project-add-btn")?.addEventListener("click", createProjectFromPrompt);
+  $("#session-search-input")?.addEventListener("input", () => {
+    loadSessionHistory();
+  });
   startApprovalPolling();
 }
 function showApprovalCard(sessionId, pending) {
