@@ -552,6 +552,28 @@ async function runApprovalManager(args: string[]): Promise<any> {
   return JSON.parse(stdout.trim());
 }
 
+function getExecutionManagerPath(): string {
+  const bundled = join(import.meta.dir, "..", "python", "execution_manager.py");
+  const dev = join(process.cwd(), "python", "execution_manager.py");
+  return existsSync(bundled) ? bundled : dev;
+}
+
+async function runExecutionManager(args: string[]): Promise<any> {
+  const script = getExecutionManagerPath();
+  const proc = spawn([pythonPath, script, ...args], {
+    env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME } as any,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(stderr || `execution_manager failed with code ${exitCode}`);
+  }
+  return JSON.parse(stdout.trim());
+}
+
 function loadSpaces(): any[] {
   try {
     const text = readFileSync(SPACES_FILE, "utf-8");
@@ -1391,6 +1413,15 @@ listSessions: async () => {
         return { hasUpdate, currentVersion: current, latestVersion: latest, url: data.html_url || "" };
       } catch (e: any) {
         return { hasUpdate: false };
+      }
+    },
+
+    executePython: async ({ code }) => {
+      try {
+        const base64 = Buffer.from(code || "", "utf-8").toString("base64");
+        return await runExecutionManager(["run", base64]);
+      } catch (e: any) {
+        return { stdout: "", stderr: e.message || "Execution failed", exit_code: -1 };
       }
     },
 

@@ -1186,9 +1186,12 @@ function formatContent(text) {
     const prismLang = langMap[lg] || lg || "text";
     const safeLang = escapeHtml(lang || "");
     const isArtifact = lg === "html" || lg === "svg";
+    const isPython = lg === "python" || lg === "py";
     const previewBtn = isArtifact ? `<button class="artifact-preview-btn" data-action="toggle-artifact">Preview</button>` : "";
+    const runBtn = isPython ? `<button class="exec-run-btn" data-action="run-python">▶ Run</button>` : "";
     const artifactFrame = isArtifact ? `<div class="artifact-preview hidden"><iframe sandbox="allow-scripts" srcdoc="${safeCode.replace(/"/g, "&quot;")}" style="width:100%;height:220px;border:none;border-radius:0 0 8px 8px;background:#fff;"></iframe></div>` : "";
-    return `<div class="code-block ${isArtifact ? "artifact-block" : ""}"><div class="code-header"><span class="code-lang">${safeLang}</span>${previewBtn}<button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code class="language-${prismLang}">${safeCode}</code></pre>${artifactFrame}</div>`;
+    const execOutput = isPython ? `<div class="exec-output hidden"><pre class="exec-stdout"></pre><pre class="exec-stderr"></pre></div>` : "";
+    return `<div class="code-block ${isArtifact ? "artifact-block" : ""}"><div class="code-header"><span class="code-lang">${safeLang}</span>${previewBtn}${runBtn}<button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)}).catch(()=>this.textContent='Failed')">Copy</button></div><pre><code class="language-${prismLang}">${safeCode}</code></pre>${artifactFrame}${execOutput}</div>`;
   });
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
@@ -2390,16 +2393,45 @@ function initPage() {
         inputBox.appendChild(micBtn);
     }
   }
-  $("#messages")?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".artifact-preview-btn");
-    if (!btn)
+  $("#messages")?.addEventListener("click", async (e) => {
+    const target = e.target;
+    const artBtn = target.closest(".artifact-preview-btn");
+    if (artBtn) {
+      const block = artBtn.closest(".code-block");
+      const preview = block?.querySelector(".artifact-preview");
+      if (!preview)
+        return;
+      const isHidden = preview.classList.toggle("hidden");
+      artBtn.textContent = isHidden ? "Preview" : "Hide";
       return;
-    const block = btn.closest(".code-block");
-    const preview = block?.querySelector(".artifact-preview");
-    if (!preview)
+    }
+    const runBtn = target.closest(".exec-run-btn");
+    if (runBtn) {
+      const block = runBtn.closest(".code-block");
+      const codeEl = block?.querySelector("code");
+      const output = block?.querySelector(".exec-output");
+      const stdoutEl = block?.querySelector(".exec-stdout");
+      const stderrEl = block?.querySelector(".exec-stderr");
+      if (!codeEl || !output || !stdoutEl || !stderrEl)
+        return;
+      const code = codeEl.textContent || "";
+      runBtn.disabled = true;
+      runBtn.textContent = "Running...";
+      try {
+        const res = await rpc.request.executePython({ code });
+        stdoutEl.textContent = res.stdout || "";
+        stderrEl.textContent = res.stderr || "";
+        output.classList.remove("hidden");
+      } catch (err) {
+        stdoutEl.textContent = "";
+        stderrEl.textContent = err.message || "Execution failed";
+        output.classList.remove("hidden");
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = "▶ Run";
+      }
       return;
-    const isHidden = preview.classList.toggle("hidden");
-    btn.textContent = isHidden ? "Preview" : "Hide";
+    }
   });
   $("#menu-toggle")?.addEventListener("click", () => {
     $(".sidebar")?.classList.toggle("open");

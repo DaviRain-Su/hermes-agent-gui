@@ -1187,6 +1187,57 @@ html, body {
   display: none;
 }
 
+.exec-run-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-right: 8px;
+}
+
+.exec-run-btn:hover {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+.exec-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.exec-output {
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  padding: 10px 14px;
+}
+
+.exec-output.hidden {
+  display: none;
+}
+
+.exec-stdout,
+.exec-stderr {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.exec-stdout {
+  color: var(--text-primary);
+}
+
+.exec-stderr {
+  color: var(--error);
+  margin-top: 6px;
+}
+
 .code-block pre {
   margin: 0;
   border: none;
