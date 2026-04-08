@@ -1766,12 +1766,17 @@ function renderAttachments() {
     container.innerHTML = "";
     return;
   }
-  container.innerHTML = attachments.map((a, idx) => `
+  const isImage = (name) => [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => name.toLowerCase().endsWith(e));
+  container.innerHTML = attachments.map((a, idx) => {
+    const imgPreview = a.previewUrl && isImage(a.name) ? `<img src="${escapeHtml(a.previewUrl)}" class="attachment-thumb" alt="" />` : "\uD83D\uDCCE";
+    return `
         <span class="attachment-chip">
-          \uD83D\uDCCE ${escapeHtml(a.name)}
+          ${imgPreview}
+          <span class="attachment-name">${escapeHtml(a.name)}</span>
           <span class="remove" data-idx="${idx}">×</span>
         </span>
-      `).join("");
+      `;
+  }).join("");
   container.querySelectorAll(".remove").forEach((el) => {
     el.addEventListener("click", (e) => {
       const idx = parseInt(e.target.dataset.idx || "-1", 10);
@@ -1784,19 +1789,18 @@ function renderAttachments() {
 }
 async function handleFileDrop(file) {
   try {
-    const base64 = await new Promise((resolve, reject) => {
+    const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader;
-      reader.onload = () => {
-        const result = reader.result;
-        const commaIdx = result.indexOf(",");
-        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
-      };
+      reader.onload = () => resolve(reader.result);
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+    const commaIdx = dataUrl.indexOf(",");
+    const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
     const res = await rpc.request.saveFileUpload({ name: file.name, dataBase64: base64 });
     if (res.success) {
-      attachments.push({ name: file.name, path: res.path });
+      const isImage = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => file.name.toLowerCase().endsWith(e));
+      attachments.push({ name: file.name, path: res.path, previewUrl: isImage ? dataUrl : undefined });
       renderAttachments();
     } else {
       alert("Failed to upload file.");
@@ -2607,6 +2611,21 @@ function initPage() {
       } else if (e.key === "Escape") {
         hideSlashMenu();
       }
+    });
+    input.addEventListener("paste", (e) => {
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItems = items.filter((it) => it.type.startsWith("image/"));
+      if (!imageItems.length)
+        return;
+      e.preventDefault();
+      imageItems.forEach((it) => {
+        const blob = it.getAsFile();
+        if (blob) {
+          const ext = it.type.split("/")[1] || "png";
+          const file = new File([blob], `pasted-${Date.now()}.${ext}`, { type: it.type });
+          handleFileDrop(file);
+        }
+      });
     });
   }
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

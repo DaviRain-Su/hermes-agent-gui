@@ -25,6 +25,7 @@ interface ChatMessage {
 interface Attachment {
   name: string;
   path: string;
+  previewUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1577,15 +1578,22 @@ function renderAttachments() {
     container.innerHTML = "";
     return;
   }
+  const isImage = (name: string) =>
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => name.toLowerCase().endsWith(e));
+
   container.innerHTML = attachments
-    .map(
-      (a, idx) => `
+    .map((a, idx) => {
+      const imgPreview = a.previewUrl && isImage(a.name)
+        ? `<img src="${escapeHtml(a.previewUrl)}" class="attachment-thumb" alt="" />`
+        : "📎";
+      return `
         <span class="attachment-chip">
-          📎 ${escapeHtml(a.name)}
+          ${imgPreview}
+          <span class="attachment-name">${escapeHtml(a.name)}</span>
           <span class="remove" data-idx="${idx}">×</span>
         </span>
-      `
-    )
+      `;
+    })
     .join("");
 
   container.querySelectorAll(".remove").forEach((el) => {
@@ -1601,20 +1609,18 @@ function renderAttachments() {
 
 async function handleFileDrop(file: File) {
   try {
-    const base64 = await new Promise<string>((resolve, reject) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // result is data:*/*;base64,xxxxx — strip the prefix
-        const commaIdx = result.indexOf(",");
-        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
-      };
+      reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+    const commaIdx = dataUrl.indexOf(",");
+    const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
     const res = await rpc.request.saveFileUpload({ name: file.name, dataBase64: base64 });
     if (res.success) {
-      attachments.push({ name: file.name, path: res.path });
+      const isImage = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => file.name.toLowerCase().endsWith(e));
+      attachments.push({ name: file.name, path: res.path, previewUrl: isImage ? dataUrl : undefined });
       renderAttachments();
     } else {
       alert("Failed to upload file.");
@@ -2459,6 +2465,21 @@ function initPage() {
       } else if (e.key === "Escape") {
         hideSlashMenu();
       }
+    });
+
+    input.addEventListener("paste", (e) => {
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItems = items.filter((it) => it.type.startsWith("image/"));
+      if (!imageItems.length) return;
+      e.preventDefault();
+      imageItems.forEach((it) => {
+        const blob = it.getAsFile();
+        if (blob) {
+          const ext = it.type.split("/")[1] || "png";
+          const file = new File([blob], `pasted-${Date.now()}.${ext}`, { type: it.type });
+          handleFileDrop(file);
+        }
+      });
     });
   }
 

@@ -1275,6 +1275,20 @@ html, body {
   opacity: 1;
 }
 
+.attachment-chip .attachment-thumb {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.attachment-chip .attachment-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Input Area */
 .input-area {
   padding: 12px 32px 20px;
