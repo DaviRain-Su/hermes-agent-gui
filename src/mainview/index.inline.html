@@ -244,6 +244,7 @@
         </div>
         <div class="input-footer">
           <span class="input-hint">Hermes can browse the web, run code, and use tools. Streaming enabled.</span>
+          <span id="composer-count" class="composer-count"></span>
           <div class="composer-metrics" id="composer-metrics" style="display:none">
             <span class="token-usage" id="token-usage-display"></span>
             <div class="context-bar" id="context-bar">
@@ -2252,9 +2253,20 @@ function loadDraft() {
   input.value = text;
   input.style.height = "auto";
   input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+  updateComposerCount();
 }
 function clearDraft() {
   localStorage.removeItem(draftKey(currentSessionId));
+}
+function updateComposerCount() {
+  const input = $("#message-input");
+  const el = $("#composer-count");
+  if (!input || !el)
+    return;
+  const text = input.value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  el.textContent = `${words} words · ${chars} chars`;
 }
 window.newChat = newChat;
 window.focusInput = focusInput;
@@ -3318,6 +3330,7 @@ function initPage() {
       updateSlashMenu();
       updateMentionMenu();
       saveDraft();
+      updateComposerCount();
     });
     input.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") {

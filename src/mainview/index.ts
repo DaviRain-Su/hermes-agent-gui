@@ -2046,10 +2046,21 @@ function loadDraft() {
   input.value = text;
   input.style.height = "auto";
   input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+  updateComposerCount();
 }
 
 function clearDraft() {
   localStorage.removeItem(draftKey(currentSessionId));
+}
+
+function updateComposerCount() {
+  const input = $("#message-input") as HTMLTextAreaElement | null;
+  const el = $("#composer-count");
+  if (!input || !el) return;
+  const text = input.value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  el.textContent = `${words} words · ${chars} chars`;
 }
 
 (window as any).newChat = newChat;
@@ -3159,6 +3170,7 @@ function initPage() {
       updateSlashMenu();
       updateMentionMenu();
       saveDraft();
+      updateComposerCount();
     });
     input.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") {

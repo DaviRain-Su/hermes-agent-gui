@@ -1717,6 +1717,12 @@ html, body {
   flex: 1;
 }
 
+.composer-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .token-usage {
   font-size: 11px;
   color: var(--text-secondary);
