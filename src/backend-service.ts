@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import { type Subprocess, spawn } from "bun";
@@ -388,7 +388,9 @@ const GUI_SESSIONS_DIR = join(homedir(), ".hermes-agent-gui", "sessions");
 const GUI_SESSION_META = join(GUI_SESSIONS_DIR, "session_meta.json");
 const CRON_JOBS_FILE = join(HERMES_HOME, "cron", "jobs.json");
 const MEMORY_FILE = join(HERMES_HOME, "memory", "MEMORY.md");
+const USER_FILE = join(HERMES_HOME, "memory", "USER.md");
 const PROFILES_DIR = join(HERMES_HOME, "profiles");
+const SPACES_FILE = join(APP_DATA_DIR, "spaces.json");
 
 function getStateDb(): Database {
   return new Database(join(HERMES_HOME, "state.db"));
@@ -436,8 +438,53 @@ async function runHermesCliProfile(args: string[]): Promise<any> {
   }
 }
 
+function getCronManagerPath(): string {
+  const bundled = join(import.meta.dir, "..", "python", "cron_manager.py");
+  const dev = join(process.cwd(), "python", "cron_manager.py");
+  return existsSync(bundled) ? bundled : dev;
+}
+
+async function runCronManager(args: string[]): Promise<any> {
+  const script = getCronManagerPath();
+  const proc = spawn([pythonPath, script, ...args], {
+    env: { ...process.env, HERMES_AGENT_DIR: hermesDir, HERMES_HOME } as any,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(stderr || `cron_manager failed with code ${exitCode}`);
+  }
+  return JSON.parse(stdout.trim());
+}
+
+function loadSpaces(): any[] {
+  try {
+    const text = readFileSync(SPACES_FILE, "utf-8");
+    return JSON.parse(text);
+  } catch {
+    return [];
+  }
+}
+
+function saveSpaces(spaces: any[]) {
+  ensureDir(APP_DATA_DIR);
+  writeFileSync(SPACES_FILE, JSON.stringify(spaces, null, 2));
+}
+
 // ---------------------------------------------------------------------------
 type RPCRequestHandler = (params: any) => Promise<any>;
+
+function safeWorkspacePath(requested: string): string {
+  const resolved = resolve(requested || HERMES_HOME);
+  const home = resolve(HERMES_HOME);
+  if (!resolved.startsWith(home)) {
+    throw new Error("Path outside workspace");
+  }
+  return resolved;
+}
 
 const rpcHandlers: { requests: Record<string, RPCRequestHandler> } = {
   requests: {
@@ -572,45 +619,242 @@ listSessions: async () => {
 
     listCron: async () => {
       try {
-        const data = await readJsonAsync<any>(CRON_JOBS_FILE, { jobs: [] });
-        return { jobs: data.jobs || [] };
-      } catch {
+        return await runCronManager(["list"]);
+      } catch (e: any) {
+        console.error("listCron failed:", e);
         return { jobs: [] };
       }
     },
 
     runCron: async ({ jobId }) => {
-      // Best-effort: trigger via CLI is tricky; return placeholder
-      return { success: false, error: "Manual trigger not supported in GUI yet." };
+      try {
+        return await runCronManager(["run", jobId]);
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    pauseCron: async ({ jobId }) => {
+      try {
+        return await runCronManager(["pause", jobId]);
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    resumeCron: async ({ jobId }) => {
+      try {
+        return await runCronManager(["resume", jobId]);
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    updateCron: async ({ jobId, updates }) => {
+      try {
+        return await runCronManager(["update", jobId, JSON.stringify(updates || {})]);
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
     },
 
     deleteCron: async ({ jobId }) => {
       try {
-        const data = await readJsonAsync<any>(CRON_JOBS_FILE, { jobs: [] });
-        data.jobs = (data.jobs || []).filter((j: any) => j.id !== jobId && j.job_id !== jobId);
-        ensureDir(join(HERMES_HOME, "cron"));
-        writeFileSync(CRON_JOBS_FILE, JSON.stringify(data, null, 2));
+        return await runCronManager(["delete", jobId]);
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    getCronOutput: async ({ jobId }) => {
+      try {
+        return await runCronManager(["output", jobId]);
+      } catch (e: any) {
+        return { outputs: [] };
+      }
+    },
+
+    getMemory: async ({ section }) => {
+      try {
+        const target = section === "user" ? USER_FILE : MEMORY_FILE;
+        ensureDir(join(HERMES_HOME, "memory"));
+        const text = await Bun.file(target).text();
+        return { content: text, path: target };
+      } catch {
+        return { content: "", path: section === "user" ? USER_FILE : MEMORY_FILE };
+      }
+    },
+
+    saveMemory: async ({ section, content }) => {
+      try {
+        const target = section === "user" ? USER_FILE : MEMORY_FILE;
+        ensureDir(join(HERMES_HOME, "memory"));
+        writeFileSync(target, content, "utf-8");
         return { success: true };
       } catch (e: any) {
         return { success: false, error: e.message };
       }
     },
 
-    getMemory: async () => {
+    listSpaces: async () => {
       try {
-        ensureDir(join(HERMES_HOME, "memory"));
-        const text = await Bun.file(MEMORY_FILE).text();
-        return { content: text, path: MEMORY_FILE };
-      } catch {
-        return { content: "", path: MEMORY_FILE };
+        return { spaces: loadSpaces() };
+      } catch (e: any) {
+        return { spaces: [] };
       }
     },
 
-    saveMemory: async ({ content }) => {
+    addSpace: async ({ path, name }) => {
       try {
-        ensureDir(join(HERMES_HOME, "memory"));
-        writeFileSync(MEMORY_FILE, content, "utf-8");
-        return { success: true };
+        const p = path ? resolve(path) : "";
+        if (!p || !existsSync(p)) return { success: false, error: "Path does not exist" };
+        const spaces = loadSpaces();
+        if (spaces.some((s: any) => s.path === p)) return { success: false, error: "Already in list" };
+        spaces.push({ path: p, name: name || basename(p) });
+        saveSpaces(spaces);
+        return { success: true, spaces };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    renameSpace: async ({ path, name }) => {
+      try {
+        const spaces = loadSpaces();
+        const s = spaces.find((s: any) => s.path === path);
+        if (!s) return { success: false, error: "Space not found" };
+        s.name = name;
+        saveSpaces(spaces);
+        return { success: true, spaces };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    removeSpace: async ({ path }) => {
+      try {
+        const spaces = loadSpaces().filter((s: any) => s.path !== path);
+        saveSpaces(spaces);
+        return { success: true, spaces };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    getTokenUsage: async ({ sessionId }) => {
+      try {
+        const db = getStateDb();
+        if (sessionId) {
+          const row = db.query(
+            "SELECT input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, estimated_cost_usd, actual_cost_usd FROM sessions WHERE id = ?"
+          ).get(sessionId) as any;
+          db.close();
+          if (!row) return { error: "Session not found" };
+          return {
+            sessionId,
+            inputTokens: row.input_tokens || 0,
+            outputTokens: row.output_tokens || 0,
+            cacheReadTokens: row.cache_read_tokens || 0,
+            cacheWriteTokens: row.cache_write_tokens || 0,
+            reasoningTokens: row.reasoning_tokens || 0,
+            estimatedCost: row.estimated_cost_usd || 0,
+            actualCost: row.actual_cost_usd || 0,
+          };
+        } else {
+          const row = db.query(
+            `SELECT SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, SUM(cache_read_tokens) as cache_read_tokens, SUM(cache_write_tokens) as cache_write_tokens, SUM(reasoning_tokens) as reasoning_tokens, SUM(estimated_cost_usd) as estimated_cost_usd, SUM(actual_cost_usd) as actual_cost_usd FROM sessions`
+          ).get() as any;
+          db.close();
+          return {
+            inputTokens: row.input_tokens || 0,
+            outputTokens: row.output_tokens || 0,
+            cacheReadTokens: row.cache_read_tokens || 0,
+            cacheWriteTokens: row.cache_write_tokens || 0,
+            reasoningTokens: row.reasoning_tokens || 0,
+            estimatedCost: row.estimated_cost_usd || 0,
+            actualCost: row.actual_cost_usd || 0,
+          };
+        }
+      } catch (e: any) {
+        console.error("getTokenUsage failed:", e);
+        return { error: e.message };
+      }
+    },
+
+    duplicateSession: async ({ sessionId }) => {
+      try {
+        const db = getStateDb();
+        const sess = db.query("SELECT * FROM sessions WHERE id = ?").get(sessionId) as any;
+        if (!sess) { db.close(); return { error: "Session not found" }; }
+        const msgs = db.query("SELECT role, content, timestamp, reasoning FROM messages WHERE session_id = ? ORDER BY timestamp").all(sessionId) as any[];
+        const newId = crypto.randomUUID();
+        const now = Math.floor(Date.now() / 1000);
+        db.query(`
+          INSERT INTO sessions (id, source, user_id, model, system_prompt, started_at, ended_at, message_count, input_tokens, output_tokens, title)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(newId, sess.source || "gui", sess.user_id || "", sess.model || "", sess.system_prompt || "", now, now, msgs.length, sess.input_tokens || 0, sess.output_tokens || 0, (sess.title || "Untitled") + " (Copy)");
+        for (const m of msgs) {
+          db.query("INSERT INTO messages (session_id, role, content, timestamp, reasoning) VALUES (?, ?, ?, ?, ?)").run(newId, m.role, m.content || "", m.timestamp || now, m.reasoning || "");
+        }
+        db.close();
+        const meta = await loadSessionMeta();
+        const oldMeta = meta[sessionId] || {};
+        meta[newId] = { ...oldMeta, display_name: (oldMeta.display_name || sess.title || "Untitled") + " (Copy)" };
+        saveSessionMeta(meta);
+        return { success: true, newSessionId: newId };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    exportSession: async ({ sessionId }) => {
+      try {
+        const db = getStateDb();
+        const sess = db.query("SELECT * FROM sessions WHERE id = ?").get(sessionId) as any;
+        if (!sess) { db.close(); return { error: "Session not found" }; }
+        const msgs = db.query("SELECT role, content, timestamp, reasoning FROM messages WHERE session_id = ? ORDER BY timestamp").all(sessionId) as any[];
+        db.close();
+        const meta = await loadSessionMeta();
+        const m = meta[sessionId] || {};
+        return {
+          title: m.display_name || sess.title || "Untitled",
+          workspace: sess.workspace || HERMES_HOME,
+          model: sess.model || "",
+          pinned: !!m.pinned,
+          archived: !!m.archived,
+          tags: m.tags || [],
+          messages: msgs.map((m2) => ({
+            role: m2.role,
+            content: m2.content || "",
+            timestamp: m2.timestamp,
+            reasoning: m2.reasoning,
+          })),
+        };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    },
+
+    importSession: async ({ data }) => {
+      try {
+        const payload = typeof data === "string" ? JSON.parse(data) : data;
+        if (!Array.isArray(payload.messages)) return { error: "Invalid format: messages array required" };
+        const newId = crypto.randomUUID();
+        const now = Math.floor(Date.now() / 1000);
+        const title = payload.title || "Imported session";
+        const db = getStateDb();
+        db.query(`
+          INSERT INTO sessions (id, source, user_id, model, system_prompt, started_at, ended_at, message_count, title)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(newId, "gui", "", payload.model || "", "", now, now, payload.messages.length, title);
+        for (const m of payload.messages) {
+          db.query("INSERT INTO messages (session_id, role, content, timestamp, reasoning) VALUES (?, ?, ?, ?, ?)").run(newId, m.role, m.content || "", m.timestamp || now, m.reasoning || "");
+        }
+        db.close();
+        const meta = await loadSessionMeta();
+        meta[newId] = { display_name: title, pinned: !!payload.pinned, archived: !!payload.archived, tags: Array.isArray(payload.tags) ? payload.tags : [] };
+        saveSessionMeta(meta);
+        return { success: true, newSessionId: newId };
       } catch (e: any) {
         return { success: false, error: e.message };
       }
@@ -714,17 +958,150 @@ listSessions: async () => {
       }
     },
 
-    listWorkspace: async ({ path: basePath }) => {
-      const dir = basePath || HERMES_HOME;
+    listWorkspace: async ({ path: requestedPath, sessionId }) => {
       try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const dir = resolve(join(base, requestedPath || "."));
+        safeWorkspacePath(dir);
         const entries = readdirSync(dir).map((name) => {
           const full = join(dir, name);
           const s = statSync(full);
-          return { name, path: full, isDirectory: s.isDirectory() };
+          return { name, path: full, relPath: join(requestedPath || ".", name), isDirectory: s.isDirectory() };
         });
-        return { entries };
+        return { entries, path: requestedPath || "." };
       } catch (e: any) {
         return { entries: [], error: e.message };
+      }
+    },
+
+    readWorkspaceFile: async ({ path: requestedPath, sessionId }) => {
+      try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const target = resolve(join(base, requestedPath || "."));
+        safeWorkspacePath(target);
+        if (!existsSync(target) || statSync(target).isDirectory()) {
+          return { error: "File not found" };
+        }
+        const content = readFileSync(target, "utf-8");
+        return { content, path: requestedPath };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    },
+
+    saveWorkspaceFile: async ({ path: requestedPath, content, sessionId }) => {
+      try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const target = resolve(join(base, requestedPath || "."));
+        safeWorkspacePath(target);
+        ensureDir(join(target, ".."));
+        writeFileSync(target, content, "utf-8");
+        return { success: true, path: requestedPath };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    renameWorkspaceFile: async ({ path: requestedPath, newName, sessionId }) => {
+      try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const source = resolve(join(base, requestedPath || "."));
+        safeWorkspacePath(source);
+        if (!existsSync(source)) return { success: false, error: "File not found" };
+        const safeName = basename(newName).replace(/[^a-zA-Z0-9._-]/g, "_");
+        const dest = join(source, "..", safeName);
+        safeWorkspacePath(dest);
+        if (existsSync(dest)) return { success: false, error: "Destination already exists" };
+        require("node:fs").renameSync(source, dest);
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    deleteWorkspaceFile: async ({ path: requestedPath, sessionId }) => {
+      try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const target = resolve(join(base, requestedPath || "."));
+        safeWorkspacePath(target);
+        if (!existsSync(target)) return { success: false, error: "File not found" };
+        const s = statSync(target);
+        if (s.isDirectory()) {
+          rmdirSync(target);
+        } else {
+          unlinkSync(target);
+        }
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    createWorkspaceDir: async ({ path: requestedPath, sessionId }) => {
+      try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const target = resolve(join(base, requestedPath || "."));
+        safeWorkspacePath(target);
+        mkdirSync(target, { recursive: true });
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    getGitInfo: async ({ sessionId }) => {
+      try {
+        let base = HERMES_HOME;
+        if (sessionId) {
+          const db = getStateDb();
+          const row = db.query("SELECT workspace FROM sessions WHERE id = ?").get(sessionId) as any;
+          db.close();
+          if (row?.workspace) base = row.workspace;
+        }
+        const { spawnSync } = require("node:child_process");
+        const branchRes = spawnSync("git", ["-C", base, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf-8" });
+        const dirtyRes = spawnSync("git", ["-C", base, "status", "--short"], { encoding: "utf-8" });
+        const branch = branchRes.status === 0 ? branchRes.stdout.trim() : null;
+        const dirtyCount = dirtyRes.status === 0 ? dirtyRes.stdout.trim().split("\n").filter((l: string) => l.trim()).length : 0;
+        return { branch, dirtyCount };
+      } catch (e: any) {
+        return { branch: null, dirtyCount: 0 };
       }
     },
 
