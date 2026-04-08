@@ -133,6 +133,7 @@ function updateBackendStatusUI(status) {
 async function initAfterBackendReady() {
   loadModels();
   loadCurrentModel();
+  loadProjectsData();
   loadSessionHistory();
   loadSkills();
   loadProfiles();
@@ -877,6 +878,50 @@ function toggleSkillsPanel() {
   const wrapper = $(".skills-wrapper");
   wrapper?.classList.toggle("collapsed");
 }
+var projects = [];
+var activeProjectFilter = "";
+async function loadProjectsData() {
+  try {
+    const res = await rpc.request.getProjects({});
+    projects = res.projects || [];
+    renderProjectsBar();
+  } catch (e) {
+    console.error("Failed to load projects:", e);
+  }
+}
+function renderProjectsBar() {
+  const bar = $("#projects-bar");
+  const list = $("#projects-list");
+  if (!bar || !list)
+    return;
+  if (projects.length === 0) {
+    bar.style.display = "none";
+    return;
+  }
+  bar.style.display = "flex";
+  list.innerHTML = projects.map((p) => `<button class="project-chip ${activeProjectFilter === p.id ? "active" : ""}" data-project="${escapeHtml(p.id)}">` + `<span class="dot" style="background:${escapeHtml(p.color)}"></span>${escapeHtml(p.name)}</button>`).join("");
+  const allChip = bar.querySelector('.project-chip[data-project=""]');
+  if (allChip)
+    allChip.classList.toggle("active", activeProjectFilter === "");
+  list.querySelectorAll(".project-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeProjectFilter = btn.dataset.project || "";
+      renderProjectsBar();
+      loadSessionHistory();
+    });
+  });
+}
+async function createProjectFromPrompt() {
+  const name = prompt("Project name:");
+  if (!name)
+    return;
+  try {
+    await rpc.request.createProject({ name });
+    await loadProjectsData();
+  } catch (e) {
+    alert("Create project failed: " + (e.message || e));
+  }
+}
 async function loadSessionHistory() {
   try {
     const sessions = await rpc.request.listSessions({});
@@ -886,7 +931,15 @@ async function loadSessionHistory() {
       return;
     }
     container.innerHTML = "";
-    sessions.forEach((s) => {
+    const filtered = sessions.filter((s) => {
+      if (activeProjectFilter === "")
+        return true;
+      return s.project_id === activeProjectFilter;
+    });
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="sessions-empty">No sessions in this project</div>';
+    }
+    filtered.forEach((s) => {
       const el = document.createElement("div");
       el.className = "session-item";
       if (s.pinned)
@@ -894,6 +947,13 @@ async function loadSessionHistory() {
       if (s.archived)
         el.classList.add("archived");
       el.dataset.id = s.id;
+      if (s.project_id) {
+        el.dataset.projectId = s.project_id;
+        const project = projects.find((p) => p.id === s.project_id);
+        if (project) {
+          el.style.borderLeftColor = project.color;
+        }
+      }
       if (s.id === currentSessionId)
         el.classList.add("active");
       const dateStr = s.updated_at ? new Date(s.updated_at).toLocaleDateString() : "";
@@ -1526,6 +1586,13 @@ function showSessionMenu(sessionId, displayName, anchor) {
   menu.className = "session-action-menu";
   const rect = anchor.getBoundingClientRect();
   menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left - 120}px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:6px 0;z-index:1000;min-width:140px;box-shadow:0 8px 30px rgba(0,0,0,0.25);`;
+  const projectSubItems = projects.map((p) => ({
+    label: `  → ${p.name}`,
+    action: async () => {
+      await rpc.request.moveSessionToProject({ sessionId, projectId: p.id });
+      await loadSessionHistory();
+    }
+  }));
   const actions = [
     { label: "Rename", action: () => renameSession(sessionId) },
     { label: "Duplicate", action: () => duplicateSession(sessionId) },
@@ -1533,6 +1600,12 @@ function showSessionMenu(sessionId, displayName, anchor) {
     { label: "Pin / Unpin", action: () => togglePinSession(sessionId) },
     { label: "Archive / Unarchive", action: () => toggleArchiveSession(sessionId) },
     { label: "Tag", action: () => tagSession(sessionId) },
+    ...projects.length ? [{ label: "Move to project", action: () => {}, disabled: true }] : [],
+    ...projectSubItems,
+    { label: "Remove from project", action: async () => {
+      await rpc.request.moveSessionToProject({ sessionId, projectId: null });
+      await loadSessionHistory();
+    } },
     { label: "Delete", action: () => deleteSession(sessionId), danger: true }
   ];
   actions.forEach((a) => {
@@ -2299,6 +2372,7 @@ function initPage() {
       mobileSwitchPanel(panel);
     });
   });
+  $("#project-add-btn")?.addEventListener("click", createProjectFromPrompt);
   startApprovalPolling();
 }
 function showApprovalCard(sessionId, pending) {

@@ -393,6 +393,27 @@ const USER_FILE = join(HERMES_HOME, "memory", "USER.md");
 const PROFILES_DIR = join(HERMES_HOME, "profiles");
 const SPACES_FILE = join(APP_DATA_DIR, "spaces.json");
 const GUI_SETTINGS_FILE = join(APP_DATA_DIR, "settings.json");
+const PROJECTS_FILE = join(APP_DATA_DIR, "projects.json");
+
+interface Project {
+  id: string;
+  name: string;
+  color: string;
+}
+
+async function loadProjects(): Promise<Project[]> {
+  try {
+    const text = await Bun.file(PROJECTS_FILE).text();
+    return JSON.parse(text).projects || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProjects(projects: Project[]) {
+  ensureDir(APP_DATA_DIR);
+  writeFileSync(PROJECTS_FILE, JSON.stringify({ projects }, null, 2));
+}
 
 interface GuiSettings {
   password_hash?: string;
@@ -615,6 +636,7 @@ listSessions: async () => {
             pinned: !!m.pinned,
             archived: !!m.archived,
             tags: m.tags || [],
+            project_id: m.project_id || null,
           };
         });
       } catch (e: any) {
@@ -650,6 +672,73 @@ listSessions: async () => {
         db.close();
       } catch {}
       return { success: true };
+    },
+
+    getProjects: async () => {
+      try {
+        const projects = await loadProjects();
+        return { projects };
+      } catch (e: any) {
+        return { projects: [], error: e.message };
+      }
+    },
+
+    createProject: async ({ name, color }) => {
+      try {
+        const projects = await loadProjects();
+        const id = crypto.randomUUID();
+        const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef", "#f43f5e"];
+        const chosenColor = color || colors[projects.length % colors.length];
+        const project: Project = { id, name, color: chosenColor };
+        projects.push(project);
+        saveProjects(projects);
+        return { project };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    },
+
+    renameProject: async ({ id, name }) => {
+      try {
+        const projects = await loadProjects();
+        const p = projects.find((x) => x.id === id);
+        if (p) p.name = name;
+        saveProjects(projects);
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    deleteProject: async ({ id }) => {
+      try {
+        let projects = await loadProjects();
+        projects = projects.filter((x) => x.id !== id);
+        saveProjects(projects);
+        const meta = await loadSessionMeta();
+        let changed = false;
+        for (const sessionId in meta) {
+          if (meta[sessionId].project_id === id) {
+            meta[sessionId].project_id = null;
+            changed = true;
+          }
+        }
+        if (changed) saveSessionMeta(meta);
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    },
+
+    moveSessionToProject: async ({ sessionId, projectId }) => {
+      try {
+        const meta = await loadSessionMeta();
+        meta[sessionId] = { ...(meta[sessionId] || {}), project_id: projectId || null };
+        saveSessionMeta(meta);
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
     },
 
     deleteSession: async ({ sessionId }) => {
