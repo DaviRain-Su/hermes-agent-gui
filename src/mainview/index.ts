@@ -1303,6 +1303,7 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
   if ((window as any).mermaid) {
     try {
       (window as any).mermaid.run({ nodes: contentDiv.querySelectorAll('.mermaid') });
+      enhanceMermaidBlocks(contentDiv);
     } catch {}
   }
 
@@ -1456,6 +1457,36 @@ function enhanceCodeBlocks(contentDiv: HTMLElement) {
       } catch {
         showToast("Copy failed");
       }
+    });
+    wrapper.appendChild(btn);
+  });
+}
+
+function enhanceMermaidBlocks(contentDiv: HTMLElement) {
+  contentDiv.querySelectorAll(".mermaid").forEach((el) => {
+    if (el.closest(".mermaid-wrapper")) return;
+    const wrapper = document.createElement("div");
+    wrapper.className = "mermaid-wrapper";
+    el.parentNode?.insertBefore(wrapper, el);
+    wrapper.appendChild(el);
+    const btn = document.createElement("button");
+    btn.className = "mermaid-export-btn";
+    btn.textContent = "↓ SVG";
+    btn.title = "Download SVG";
+    btn.addEventListener("click", () => {
+      const svg = el.querySelector("svg");
+      if (!svg) return;
+      const serializer = new XMLSerializer();
+      const source = serializer.serializeToString(svg);
+      const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `diagram-${Date.now()}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     });
     wrapper.appendChild(btn);
   });

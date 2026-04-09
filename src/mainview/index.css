@@ -1102,6 +1102,30 @@ html, body {
   pointer-events: none;
 }
 
+.mermaid-wrapper {
+  position: relative;
+  margin: 6px 0;
+}
+
+.mermaid-export-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+}
+
+.mermaid-wrapper:hover .mermaid-export-btn {
+  opacity: 1;
+}
+
 .message-avatar {
   width: 28px;
   height: 28px;
