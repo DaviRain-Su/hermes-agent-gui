@@ -4,12 +4,13 @@ import { rpc } from "../utils/rpc.js";
 import { AppState, ChatMessage } from "../state.js";
 import { appendMessage, renderThinkingCard, postProcessMessage, updateTokenUsageDisplay } from "./chat.js";
 import { loadDraft } from "./composer.js";
+import { newChat } from "./composer.js";
 
 
 export async function loadProjectsData() {
   try {
     const res = await rpc.request.getProjects({});
-    AppState.projects = res.AppState.projects || [];
+    AppState.projects = res.projects || [];
     renderProjectsBar();
   } catch (e) {
     console.error("Failed to load AppState.projects:", e);
@@ -17,8 +18,8 @@ export async function loadProjectsData() {
 }
 
 export function renderProjectsBar() {
-  const bar = $("#AppState.projects-bar");
-  const list = $("#AppState.projects-list");
+  const bar = $("#projects-bar");
+  const list = $("#projects-list");
   if (!bar || !list) return;
   if (AppState.projects.length === 0) {
     bar.style.display = "none";

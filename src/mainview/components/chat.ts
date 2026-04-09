@@ -5,6 +5,9 @@ import { AppState, ChatMessage, Attachment, MODEL_CONTEXT_LIMITS, MAX_INITIAL_ME
 import { loadWorkspace } from "./workspace.js";
 import { focusInput, saveDraft, loadDraft, playNotificationSound, hideSlashMenu, hideMentionMenu } from "./composer.js";
 import { clearSearch, renderReplyBar, cancelReply } from "./overlays.js";
+import { clearDraft, handleSlashCommand, updateScrollIndicator } from "./composer.js";
+import { renderErrorBanner, replyToMessage } from "./overlays.js";
+import { loadSessionHistory } from "./sidebar.js";
 
 
 export function toggleTTS(text: string, btn: HTMLButtonElement) {
@@ -638,7 +641,7 @@ export function _postProcessInlineToolCodes(el: HTMLElement) {
 // Attachments
 // ---------------------------------------------------------------------------
 export function renderAttachments() {
-  const container = $("#AppState.attachments")!;
+  const container = $("#attachments")!;
   if (AppState.attachments.length === 0) {
     container.innerHTML = "";
     return;
