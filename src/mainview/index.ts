@@ -98,6 +98,7 @@ import {
   runComparison,
   exportToMarkdown,
   exportToPDF,
+  setPassword,
 } from "./components/settings.js";
 import {
   loadWorkspace,
@@ -548,14 +549,28 @@ async function loadProfiles() {
     const profiles = data.profiles || [];
     container.innerHTML = profiles.map((p: any) => `
       <div class="profile-item ${p.active ? 'active' : ''}" data-name="${escapeHtml(p.name)}">
-        <span class="profile-dot ${p.active ? 'on' : ''}"></span>
-        <span class="profile-name">${escapeHtml(p.name)}</span>
-        ${p.active ? '<span class="profile-badge">active</span>' : ''}
+        <div class="profile-main">
+          <span class="profile-dot ${p.active ? 'on' : ''}"></span>
+          <span class="profile-name">${escapeHtml(p.name)}</span>
+          ${p.active ? '<span class="profile-badge">active</span>' : ''}
+        </div>
+        <div class="profile-actions">
+          <button class="icon-btn rename-profile-btn" title="Rename">✏️</button>
+          <button class="icon-btn delete-profile-btn" title="Delete">🗑️</button>
+        </div>
       </div>
     `).join("");
     container.querySelectorAll<HTMLDivElement>(".profile-item").forEach((el) => {
+      const name = el.dataset.name || "";
+      el.querySelector(".rename-profile-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        renameProfile(name);
+      });
+      el.querySelector(".delete-profile-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteProfile(name);
+      });
       el.addEventListener("click", async () => {
-        const name = el.dataset.name || "";
         if (!name) return;
         await rpc.request.switchProfile({ name });
         await loadProfiles();
@@ -587,6 +602,17 @@ async function deleteProfile(name: string) {
     await loadProfiles();
   } catch (e: any) {
     alert("Delete profile failed: " + e.message);
+  }
+}
+
+async function renameProfile(oldName: string) {
+  const newName = prompt(`Rename profile "${oldName}":`, oldName);
+  if (!newName || newName === oldName) return;
+  try {
+    await rpc.request.renameProfile({ oldName, newName });
+    await loadProfiles();
+  } catch (e: any) {
+    alert("Rename profile failed: " + e.message);
   }
 }
 
@@ -1198,6 +1224,7 @@ function initPage() {
   $("#custom-css-save")?.addEventListener("click", saveCustomCSS);
   $("#gist-backup")?.addEventListener("click", backupToGist);
   $("#gist-restore")?.addEventListener("click", restoreFromGist);
+  $("#set-password-btn")?.addEventListener("click", setPassword);
   const patInput = $("#gist-pat") as HTMLInputElement | null;
   if (patInput) {
     const savedPat = localStorage.getItem("hermes-gist-pat");

@@ -2882,6 +2882,39 @@ html, body {
   background: var(--bg-tertiary);
 }
 
+.profile-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.profile-item:hover .profile-actions {
+  opacity: 1;
+}
+
+.profile-actions button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 12px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.profile-actions button:hover {
+  background: var(--bg-secondary);
+}
+
 .profile-dot {
   width: 8px;
   height: 8px;

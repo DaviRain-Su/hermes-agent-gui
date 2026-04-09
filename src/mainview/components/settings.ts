@@ -420,3 +420,29 @@ export function exportToPDF() {
   });
 }
 
+export async function setPassword() {
+  const newPass = ($("#new-password") as HTMLInputElement | null)?.value.trim();
+  const confirmPass = ($("#confirm-password") as HTMLInputElement | null)?.value.trim();
+  const status = $("#password-status");
+  if (!newPass) {
+    if (status) status.textContent = "Please enter a new password.";
+    return;
+  }
+  if (newPass !== confirmPass) {
+    if (status) status.textContent = "Passwords do not match.";
+    return;
+  }
+  try {
+    const res = await rpc.request.setPassword({ password: newPass });
+    if (res.success) {
+      if (status) status.textContent = "Password updated successfully.";
+      ($("#new-password") as HTMLInputElement | null)!.value = "";
+      ($("#confirm-password") as HTMLInputElement | null)!.value = "";
+    } else {
+      if (status) status.textContent = res.error || "Failed to update password.";
+    }
+  } catch (e: any) {
+    if (status) status.textContent = "Error: " + (e.message || String(e));
+  }
+}
+
