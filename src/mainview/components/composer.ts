@@ -283,4 +283,30 @@ export function initAgentMode() {
   AppState.agentMode = saved;
 }
 
+export function toggleVoiceMode(show?: boolean) {
+  const overlay = $("#voice-overlay");
+  if (!overlay) return;
+  if (typeof show === "boolean") {
+    overlay.classList.toggle("hidden", !show);
+    AppState.voiceModeActive = show;
+  } else {
+    overlay.classList.toggle("hidden");
+    AppState.voiceModeActive = !overlay.classList.contains("hidden");
+  }
+  const mic = $("#voice-mic");
+  const status = $("#voice-status");
+  if (AppState.voiceModeActive) {
+    mic?.classList.remove("listening", "speaking");
+    if (status) {
+      status.textContent = "Tap microphone to speak";
+      status.className = "voice-status";
+    }
+  }
+}
+
+export function initVoiceMode() {
+  $("#voice-mode-btn")?.addEventListener("click", () => toggleVoiceMode(true));
+  $("#voice-close")?.addEventListener("click", () => toggleVoiceMode(false));
+}
+
 

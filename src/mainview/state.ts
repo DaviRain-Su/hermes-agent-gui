@@ -78,6 +78,7 @@ export const AppState = {
   currentModelConfig: { model: "", provider: "" },
   backgroundErrors: new Map<string, string>(),
   agentMode: false,
+  voiceModeActive: false,
   workspacePath: "",
   previewHasChanges: false,
   activeApprovalCards: new Map<string, HTMLElement>(),

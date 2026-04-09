@@ -25,7 +25,12 @@ import {
   updateMentionMenu,
   toggleAgentMode,
   initAgentMode,
+  toggleVoiceMode,
+  initVoiceMode,
 } from "./components/composer.js";
+import {
+  startVoiceListening,
+} from "./components/chat.js";
 import {
   renderErrorBanner,
   toggleSearch,
@@ -861,6 +866,7 @@ function initPage() {
   const savedTheme = localStorage.getItem("hermes-theme") || "dark";
   setTheme(savedTheme);
   initAgentMode();
+  initVoiceMode();
   checkAuth();
 
   // Connect to backend via HTTP-RPC
@@ -898,6 +904,7 @@ function initPage() {
 
   $("#send-btn")?.addEventListener("click", sendMessage);
   $("#agent-mode")?.addEventListener("change", () => toggleAgentMode());
+  $("#voice-mic")?.addEventListener("click", () => startVoiceListening());
 
   $("#new-chat-btn")?.addEventListener("click", newChat);
 

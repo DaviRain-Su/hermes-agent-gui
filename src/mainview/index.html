@@ -270,6 +270,7 @@
             autofocus
           ></textarea>
           <button id="snippet-btn" class="icon-btn snippet-btn" title="Insert snippet" aria-label="Insert snippet">⚡</button>
+          <button id="voice-mode-btn" class="icon-btn" title="Voice mode" aria-label="Voice mode">🎙️</button>
           <button id="send-btn" class="send-btn" disabled>Send</button>
         </div>
         <div class="input-footer">
@@ -526,6 +527,23 @@
   <!-- Lightbox -->
   <div id="lightbox" class="lightbox hidden" aria-label="Image preview">
     <img id="lightbox-img" src="" alt="Preview" />
+  </div>
+
+  <!-- Voice Mode Overlay -->
+  <div id="voice-overlay" class="voice-overlay hidden">
+    <div class="voice-card">
+      <div class="voice-header">
+        <span class="voice-title">Voice Mode</span>
+        <button id="voice-close" class="icon-btn small" aria-label="Close voice mode">✕</button>
+      </div>
+      <div class="voice-body">
+        <div id="voice-status" class="voice-status">Tap microphone to speak</div>
+        <button id="voice-mic" class="voice-mic" aria-label="Toggle microphone">
+          <span class="voice-mic-icon">🎙️</span>
+        </button>
+        <div class="voice-hint">Tap to start listening · Tap again to stop</div>
+      </div>
+    </div>
   </div>
 </body>
 </html>
