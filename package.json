@@ -1,6 +1,6 @@
 {
   "name": "hermes-agent-gui",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Desktop GUI for Hermes Agent using Electron",
   "author": "Hermes Team <dev@davirain.hermes-agent-gui>",
   "main": "electron/main.js",
