@@ -1,32 +1,16 @@
 // ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-interface BackendStatus {
-  running: boolean;
-  port: number;
-  url: string;
-}
-
-interface SessionSummary {
-  id: string;
-  key: string;
-  display_name: string;
-  updated_at: string;
-  created_at: string;
-  message_count: number;
-}
-
-interface ChatMessage {
-  role: string;
-  content?: string;
-  [key: string]: any;
-}
-
-interface Attachment {
-  name: string;
-  path: string;
-  previewUrl?: string;
-}
+import { $, $$, escapeHtml, updateDocumentTitle, showToast } from "./utils/dom.js";
+import { formatContent, formatContentForPrint } from "./utils/format.js";
+import {
+  BackendStatus,
+  ChatMessage,
+  Attachment,
+  MODEL_CONTEXT_LIMITS,
+  SCROLL_PAUSE_THRESHOLD,
+  MAX_INITIAL_MESSAGES,
+  BUILTIN_SNIPPETS,
+  AppState,
+} from "./state.js";
 
 // ---------------------------------------------------------------------------
 // Simple HTTP-RPC client (replaces Electroview for Tauri/Linux compatibility)
@@ -68,8 +52,8 @@ const rpc = {
   send: {
     backendStatus: (status: BackendStatus) => {
       updateBackendStatusUI(status);
-      if (status.running && !backendUrl) {
-        backendUrl = status.url;
+      if (status.running && !AppState.backendUrl) {
+        AppState.backendUrl = status.url;
         initAfterBackendReady();
       }
     },
@@ -99,72 +83,9 @@ function setDebug(msg: string) {
   banner.textContent = msg;
 }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-let backendUrl = "";
-let activeStreamController: AbortController | null = null;
-let conversation: ChatMessage[] = [];
-let currentSessionId = "";
-let attachments: Attachment[] = [];
-let currentModelConfig = { model: "", provider: "" };
-const backgroundErrors = new Map<string, string>();
-
-const MODEL_CONTEXT_LIMITS: Record<string, number> = {
-  "gpt-4": 8192,
-  "gpt-4o": 128000,
-  "gpt-4o-mini": 128000,
-  "gpt-5": 256000,
-  "gpt-5.4-mini": 256000,
-  "claude-3-5-sonnet": 200000,
-  "claude-3-7-sonnet": 200000,
-  "claude-3-opus": 200000,
-  "claude-4-sonnet": 200000,
-  "claude-4-opus": 200000,
-  "gemini-1.5-pro": 128000,
-  "gemini-2.0-flash": 1000000,
-  "gemini-2.5-pro": 1000000,
-  "deepseek-chat": 64000,
-  "deepseek-reasoner": 64000,
-  "o1": 128000,
-  "o3": 200000,
-  "o3-mini": 200000,
-  "kimi-k2.5": 256000,
-  "kimi-k2": 256000,
-  "qwen2.5": 128000,
-  "qwen-max": 32000,
-  "default": 128000,
-};
-
 function getContextLimit(model: string): number {
   const key = Object.keys(MODEL_CONTEXT_LIMITS).find((k) => model.toLowerCase().includes(k));
   return key ? MODEL_CONTEXT_LIMITS[key] : MODEL_CONTEXT_LIMITS.default;
-}
-
-let workspacePath = "";
-let previewHasChanges = false;
-const activeApprovalCards = new Map<string, HTMLElement>();
-let activeReplyTo: { role: string; content: string } | null = null;
-let draggedSessionId: string | null = null;
-let userScrolledUp = false;
-const SCROLL_PAUSE_THRESHOLD = 80;
-
-// ---------------------------------------------------------------------------
-// DOM Helpers
-// ---------------------------------------------------------------------------
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null;
-const $$ = (sel: string) => document.querySelectorAll(sel) as NodeListOf<HTMLElement>;
-(window as any).$ = $;
-(window as any).$$ = $$;
-
-function updateDocumentTitle(name: string) {
-  document.title = name ? `${name} — Hermes Agent` : "Hermes Agent";
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,11 +140,11 @@ async function initAfterBackendReady() {
 async function loadCurrentModel() {
   try {
     const cfg = await rpc.request.getCurrentModel({});
-    currentModelConfig = { model: cfg.model || "", provider: cfg.provider || "" };
+    AppState.currentModelConfig = { model: cfg.model || "", provider: cfg.provider || "" };
     const modelInput = $("#model-input") as HTMLInputElement | null;
     const providerSelect = $("#provider-select") as HTMLSelectElement | null;
-    if (modelInput) modelInput.value = currentModelConfig.model;
-    if (providerSelect) providerSelect.value = currentModelConfig.provider;
+    if (modelInput) modelInput.value = AppState.currentModelConfig.model;
+    if (providerSelect) providerSelect.value = AppState.currentModelConfig.provider;
   } catch (e) {
     console.error("Failed to load current model:", e);
   }
@@ -269,9 +190,9 @@ async function applyModel() {
 }
 
 async function loadModels() {
-  if (!backendUrl) return;
+  if (!AppState.backendUrl) return;
   try {
-    const res = await fetch(`${backendUrl}/v1/models`);
+    const res = await fetch(`${AppState.backendUrl}/v1/models`);
     const data = await res.json();
     // We don't use a dropdown for models anymore (free text input is more flexible),
     // but we could keep a datalist for suggestions.
@@ -286,8 +207,8 @@ async function loadModels() {
 async function loadWorkspace() {
   try {
     const [data, git] = await Promise.all([
-      rpc.request.listWorkspace({ path: workspacePath, sessionId: currentSessionId || undefined }),
-      rpc.request.getGitInfo({ sessionId: currentSessionId || undefined }).catch(() => ({ branch: null, dirtyCount: 0 })),
+      rpc.request.listWorkspace({ path: AppState.workspacePath, sessionId: AppState.currentSessionId || undefined }),
+      rpc.request.getGitInfo({ sessionId: AppState.currentSessionId || undefined }).catch(() => ({ branch: null, dirtyCount: 0 })),
     ]);
     const container = $("#workspace-list");
     if (!container) return;
@@ -310,7 +231,7 @@ async function loadWorkspace() {
           const isDir = el.dataset.dir === "1";
           const p = el.dataset.path || "";
           if (isDir) {
-            workspacePath = p;
+            AppState.workspacePath = p;
             closePreview();
             loadWorkspace();
           } else {
@@ -336,12 +257,12 @@ async function loadWorkspace() {
     // Breadcrumb
     const bc = $("#workspace-breadcrumb");
     if (bc) {
-      const parts = workspacePath.split("/").filter(Boolean);
+      const parts = AppState.workspacePath.split("/").filter(Boolean);
       bc.innerHTML = `<span data-idx="-1">~</span>` + parts.map((p, i) => ` / <span data-idx="${i}">${escapeHtml(p)}</span>`).join("");
       bc.querySelectorAll("span").forEach((sp) => {
         sp.addEventListener("click", () => {
           const idx = parseInt(sp.dataset.idx || "-1", 10);
-          workspacePath = parts.slice(0, idx + 1).join("/");
+          AppState.workspacePath = parts.slice(0, idx + 1).join("/");
           closePreview();
           loadWorkspace();
         });
@@ -365,7 +286,7 @@ async function loadWorkspace() {
 
 async function openPreview(path: string) {
   try {
-    const data = await rpc.request.readWorkspaceFile({ path, sessionId: currentSessionId || undefined });
+    const data = await rpc.request.readWorkspaceFile({ path, sessionId: AppState.currentSessionId || undefined });
     if (data.error) {
       alert(data.error);
       return;
@@ -379,7 +300,7 @@ async function openPreview(path: string) {
 
     preview.classList.remove("hidden");
     filename.textContent = path.split("/").pop() || path;
-    previewHasChanges = false;
+    AppState.previewHasChanges = false;
 
     const isMarkdown = path.toLowerCase().endsWith(".md");
     const isImage = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => path.toLowerCase().endsWith(e));
@@ -399,7 +320,7 @@ async function openPreview(path: string) {
       }
       if (editor) {
         editor.oninput = () => {
-          previewHasChanges = true;
+          AppState.previewHasChanges = true;
           saveBtn?.classList.remove("hidden");
         };
       }
@@ -412,7 +333,7 @@ async function openPreview(path: string) {
 function closePreview() {
   const preview = $("#workspace-preview");
   if (preview) preview.classList.add("hidden");
-  previewHasChanges = false;
+  AppState.previewHasChanges = false;
 }
 
 async function savePreview() {
@@ -420,15 +341,15 @@ async function savePreview() {
   const filename = $("#preview-filename");
   if (!editor || !filename) return;
   const name = filename.textContent || "";
-  const path = workspacePath ? `${workspacePath}/${name}` : name;
+  const path = AppState.workspacePath ? `${AppState.workspacePath}/${name}` : name;
   try {
     const res = await rpc.request.saveWorkspaceFile({
       path,
       content: editor.value,
-      sessionId: currentSessionId || undefined,
+      sessionId: AppState.currentSessionId || undefined,
     });
     if (res.success) {
-      previewHasChanges = false;
+      AppState.previewHasChanges = false;
       $("#preview-save")?.classList.add("hidden");
     } else {
       alert("Save failed: " + (res.error || "Unknown error"));
@@ -441,9 +362,9 @@ async function savePreview() {
 async function createWsFile() {
   const name = prompt("New file name:");
   if (!name) return;
-  const path = workspacePath ? `${workspacePath}/${name}` : name;
+  const path = AppState.workspacePath ? `${AppState.workspacePath}/${name}` : name;
   try {
-    const res = await rpc.request.saveWorkspaceFile({ path, content: "", sessionId: currentSessionId || undefined });
+    const res = await rpc.request.saveWorkspaceFile({ path, content: "", sessionId: AppState.currentSessionId || undefined });
     if (res.success) loadWorkspace();
   } catch (e: any) {
     alert("Create failed: " + e.message);
@@ -453,9 +374,9 @@ async function createWsFile() {
 async function createWsDir() {
   const name = prompt("New folder name:");
   if (!name) return;
-  const path = workspacePath ? `${workspacePath}/${name}` : name;
+  const path = AppState.workspacePath ? `${AppState.workspacePath}/${name}` : name;
   try {
-    const res = await rpc.request.createWorkspaceDir({ path, sessionId: currentSessionId || undefined });
+    const res = await rpc.request.createWorkspaceDir({ path, sessionId: AppState.currentSessionId || undefined });
     if (res.success) loadWorkspace();
   } catch (e: any) {
     alert("Create failed: " + e.message);
@@ -467,9 +388,9 @@ async function renameWsEntry(path: string) {
   const newName = prompt("Rename:", name);
   if (!newName || newName === name) return;
   try {
-    const res = await rpc.request.renameWorkspaceFile({ path, newName, sessionId: currentSessionId || undefined });
+    const res = await rpc.request.renameWorkspaceFile({ path, newName, sessionId: AppState.currentSessionId || undefined });
     if (res.success) {
-      if (previewHasChanges && $("#preview-filename")?.textContent === name) closePreview();
+      if (AppState.previewHasChanges && $("#preview-filename")?.textContent === name) closePreview();
       loadWorkspace();
     } else {
       alert("Rename failed: " + (res.error || "Unknown error"));
@@ -482,7 +403,7 @@ async function renameWsEntry(path: string) {
 async function deleteWsEntry(path: string) {
   if (!confirm(`Delete "${path.split("/").pop()}?"`)) return;
   try {
-    const res = await rpc.request.deleteWorkspaceFile({ path, sessionId: currentSessionId || undefined });
+    const res = await rpc.request.deleteWorkspaceFile({ path, sessionId: AppState.currentSessionId || undefined });
     if (res.success) {
       if ($("#preview-filename")?.textContent === path.split("/").pop()) closePreview();
       loadWorkspace();
@@ -509,7 +430,7 @@ function showWorkspaceContextMenu(e: MouseEvent, path: string, isDirectory: bool
     label: isDirectory ? "Open folder" : "Open file",
     action: () => {
       if (isDirectory) {
-        workspacePath = path;
+        AppState.workspacePath = path;
         closePreview();
         loadWorkspace();
       } else {
@@ -659,7 +580,7 @@ async function deleteTask(jobId: string) {
 
 function extractTodos() {
   const todos: { text: string; done: boolean; sourceIdx: number }[] = [];
-  conversation.forEach((msg, idx) => {
+  AppState.conversation.forEach((msg, idx) => {
     const lines = (msg.content || "").split("\n");
     lines.forEach((line) => {
       const m = line.match(/^(\s*)-?\s*\[([ xX])\]\s+(.+)$/);
@@ -724,7 +645,7 @@ async function loadSpaces() {
         removeSpace(path);
       });
       el.addEventListener("click", () => {
-        workspacePath = "";
+        AppState.workspacePath = "";
         closePreview();
         // Set this space as active? For now just refresh workspace
         loadWorkspace();
@@ -776,11 +697,10 @@ async function removeSpace(path: string) {
   }
 }
 
-let activeMemorySection: "memory" | "user" = "memory";
 
 async function loadMemory() {
   try {
-    const data = await rpc.request.getMemory({ section: activeMemorySection });
+    const data = await rpc.request.getMemory({ section: AppState.activeMemorySection });
     const editor = $("#memory-editor") as HTMLTextAreaElement | null;
     if (editor) editor.value = data.content || "";
   } catch (e) {
@@ -792,7 +712,7 @@ async function saveMemory() {
   const editor = $("#memory-editor") as HTMLTextAreaElement | null;
   if (!editor) return;
   try {
-    const res = await rpc.request.saveMemory({ section: activeMemorySection, content: editor.value });
+    const res = await rpc.request.saveMemory({ section: AppState.activeMemorySection, content: editor.value });
     if (res.success) {
       alert("Memory saved.");
     } else {
@@ -1006,42 +926,40 @@ function toggleSkillsPanel() {
 // ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
-let projects: { id: string; name: string; color: string }[] = [];
-let activeProjectFilter = "";
 
 async function loadProjectsData() {
   try {
     const res = await rpc.request.getProjects({});
-    projects = res.projects || [];
+    AppState.projects = res.AppState.projects || [];
     renderProjectsBar();
   } catch (e) {
-    console.error("Failed to load projects:", e);
+    console.error("Failed to load AppState.projects:", e);
   }
 }
 
 function renderProjectsBar() {
-  const bar = $("#projects-bar");
-  const list = $("#projects-list");
+  const bar = $("#AppState.projects-bar");
+  const list = $("#AppState.projects-list");
   if (!bar || !list) return;
-  if (projects.length === 0) {
+  if (AppState.projects.length === 0) {
     bar.style.display = "none";
     return;
   }
   bar.style.display = "flex";
-  list.innerHTML = projects
+  list.innerHTML = AppState.projects
     .map(
       (p) =>
-        `<button class="project-chip ${activeProjectFilter === p.id ? "active" : ""}" data-project="${escapeHtml(p.id)}">` +
+        `<button class="project-chip ${AppState.activeProjectFilter === p.id ? "active" : ""}" data-project="${escapeHtml(p.id)}">` +
         `<span class="dot" style="background:${escapeHtml(p.color)}"></span>${escapeHtml(p.name)}</button>`
     )
     .join("");
 
   const allChip = bar.querySelector('.project-chip[data-project=""]') as HTMLElement | null;
-  if (allChip) allChip.classList.toggle("active", activeProjectFilter === "");
+  if (allChip) allChip.classList.toggle("active", AppState.activeProjectFilter === "");
 
   list.querySelectorAll(".project-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
-      activeProjectFilter = (btn as HTMLButtonElement).dataset.project || "";
+      AppState.activeProjectFilter = (btn as HTMLButtonElement).dataset.project || "";
       renderProjectsBar();
       loadSessionHistory();
     });
@@ -1072,8 +990,8 @@ async function loadSessionHistory() {
     }
     container.innerHTML = "";
     const filtered = sessions.filter((s: any) => {
-      if (activeProjectFilter === "") return true;
-      return s.project_id === activeProjectFilter;
+      if (AppState.activeProjectFilter === "") return true;
+      return s.project_id === AppState.activeProjectFilter;
     });
     const search = (($("#session-search-input") as HTMLInputElement | null)?.value || "").toLowerCase();
     const searched = filtered.filter((s: any) => {
@@ -1093,22 +1011,22 @@ async function loadSessionHistory() {
       el.dataset.id = s.id;
       if (s.project_id) {
         el.dataset.projectId = s.project_id;
-        const project = projects.find((p) => p.id === s.project_id);
+        const project = AppState.projects.find((p) => p.id === s.project_id);
         if (project) {
           el.style.borderLeftColor = project.color;
         }
       }
-      if (s.id === currentSessionId) el.classList.add("active");
+      if (s.id === AppState.currentSessionId) el.classList.add("active");
 
       if (!s.pinned) {
         el.draggable = true;
         el.addEventListener("dragstart", (e) => {
-          draggedSessionId = s.id;
+          AppState.draggedSessionId = s.id;
           el.classList.add("dragging");
           e.dataTransfer?.setData("text/plain", s.id);
         });
         el.addEventListener("dragend", () => {
-          draggedSessionId = null;
+          AppState.draggedSessionId = null;
           el.classList.remove("dragging");
           $$<HTMLElement>(".drop-indicator").forEach((i) => i.remove());
         });
@@ -1140,9 +1058,9 @@ const MAX_INITIAL_MESSAGES = 100;
 async function loadSessionMessages(sessionId: string, displayName?: string, showAll = false) {
   try {
     const messages = await rpc.request.loadSession({ sessionId });
-    currentSessionId = sessionId;
+    AppState.currentSessionId = sessionId;
     updateDocumentTitle(displayName || "Hermes Agent");
-    conversation = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    AppState.conversation = messages.filter((m) => m.role === "user" || m.role === "assistant");
 
     // Update UI active state
     $$<HTMLDivElement>(".session-item").forEach((el) => {
@@ -1151,7 +1069,7 @@ async function loadSessionMessages(sessionId: string, displayName?: string, show
 
     const messagesEl = $("#messages")!;
     messagesEl.innerHTML = "";
-    if (conversation.length === 0) {
+    if (AppState.conversation.length === 0) {
       messagesEl.innerHTML = `
         <div class="empty-state">
           <h2>Empty Session</h2>
@@ -1163,8 +1081,8 @@ async function loadSessionMessages(sessionId: string, displayName?: string, show
 
     let start = 0;
     let showLoadMore = false;
-    if (!showAll && conversation.length > MAX_INITIAL_MESSAGES) {
-      start = conversation.length - MAX_INITIAL_MESSAGES;
+    if (!showAll && AppState.conversation.length > MAX_INITIAL_MESSAGES) {
+      start = AppState.conversation.length - MAX_INITIAL_MESSAGES;
       showLoadMore = true;
     }
 
@@ -1178,7 +1096,7 @@ async function loadSessionMessages(sessionId: string, displayName?: string, show
       messagesEl.appendChild(loadMore);
     }
 
-    conversation.slice(start).forEach((msg) => {
+    AppState.conversation.slice(start).forEach((msg) => {
       const ts = msg.created_at || msg.timestamp || undefined;
       const contentDiv = appendMessage(msg.role as any, msg.content || "", ts);
       if (msg.reasoning) renderThinkingCard(contentDiv, msg.reasoning);
@@ -1294,7 +1212,7 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
   }
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
-  if (!userScrolledUp) {
+  if (!AppState.userScrolledUp) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
   updateScrollIndicator();
@@ -1332,20 +1250,20 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
 }
 
 function editMessage(wrapper: HTMLElement) {
-  if (activeStreamController) {
+  if (AppState.activeStreamController) {
     alert("Cannot edit while a response is streaming.");
     return;
   }
   const messagesEl = $("#messages")!;
   const allMessages = Array.from(messagesEl.querySelectorAll(".message"));
   const idx = allMessages.indexOf(wrapper);
-  if (idx < 0 || idx >= conversation.length) return;
-  // Truncate conversation and DOM after this message
-  conversation = conversation.slice(0, idx + 1);
+  if (idx < 0 || idx >= AppState.conversation.length) return;
+  // Truncate AppState.conversation and DOM after this message
+  AppState.conversation = AppState.conversation.slice(0, idx + 1);
   for (let i = allMessages.length - 1; i > idx; i--) {
     allMessages[i].remove();
   }
-  const content = conversation[idx]?.content || "";
+  const content = AppState.conversation[idx]?.content || "";
   const input = $("#message-input") as HTMLTextAreaElement | null;
   if (input) {
     input.value = content;
@@ -1359,12 +1277,12 @@ function renderErrorBanner() {
   const banner = $("#error-banner");
   if (!banner) return;
   const enabled = localStorage.getItem("hermes-bg-errors") !== "0";
-  if (!enabled || backgroundErrors.size === 0) {
+  if (!enabled || AppState.backgroundErrors.size === 0) {
     banner.classList.add("hidden");
     banner.innerHTML = "";
     return;
   }
-  const items = Array.from(backgroundErrors.entries())
+  const items = Array.from(AppState.backgroundErrors.entries())
     .map(([sid, msg]) => `<div><strong>${escapeHtml(sid.slice(0, 8))}</strong>: ${escapeHtml(msg)}</div>`)
     .join("");
   banner.innerHTML = `
@@ -1373,7 +1291,7 @@ function renderErrorBanner() {
   `;
   banner.classList.remove("hidden");
   banner.querySelector("button")?.addEventListener("click", () => {
-    backgroundErrors.clear();
+    AppState.backgroundErrors.clear();
     renderErrorBanner();
   });
 }
@@ -1705,11 +1623,11 @@ class MessageBlockBuilder {
 
 async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: AbortSignal, targetSessionId: string) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (currentSessionId) {
-    headers["X-Hermes-Session-Id"] = currentSessionId;
+  if (AppState.currentSessionId) {
+    headers["X-Hermes-Session-Id"] = AppState.currentSessionId;
   }
 
-  const response = await fetch(`${backendUrl}/v1/chat/completions`, {
+  const response = await fetch(`${AppState.backendUrl}/v1/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -1742,7 +1660,7 @@ async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: 
     }
     const sessionHeader = response.headers.get("X-Hermes-Session-Id");
     if (sessionHeader) {
-      currentSessionId = sessionHeader;
+      AppState.currentSessionId = sessionHeader;
       loadSessionHistory();
     }
     return typeof content === "string" ? content : "";
@@ -1787,7 +1705,7 @@ async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: 
             builder.appendText(delta.content);
             builder.processBuffer();
             const messagesEl = $("#messages")!;
-            if (!userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
+            if (!AppState.userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
             updateScrollIndicator();
           }
           // Some backends wrap errors inside SSE data
@@ -1839,11 +1757,11 @@ async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: 
   // Try to capture session id from headers for future loads
   const sessionHeader = response.headers.get("X-Hermes-Session-Id");
   if (sessionHeader) {
-    currentSessionId = sessionHeader;
+    AppState.currentSessionId = sessionHeader;
     loadSessionHistory();
   }
 
-  // Reconstruct full text from blocks for conversation history
+  // Reconstruct full text from blocks for AppState.conversation history
   return builder.blocks
     .map((b) => (b.type === "text" ? b.content : `\`${b.name}\``))
     .join("");
@@ -1896,15 +1814,15 @@ function _postProcessInlineToolCodes(el: HTMLElement) {
 // Attachments
 // ---------------------------------------------------------------------------
 function renderAttachments() {
-  const container = $("#attachments")!;
-  if (attachments.length === 0) {
+  const container = $("#AppState.attachments")!;
+  if (AppState.attachments.length === 0) {
     container.innerHTML = "";
     return;
   }
   const isImage = (name: string) =>
     [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => name.toLowerCase().endsWith(e));
 
-  container.innerHTML = attachments
+  container.innerHTML = AppState.attachments
     .map((a, idx) => {
       const imgPreview = a.previewUrl && isImage(a.name)
         ? `<img src="${escapeHtml(a.previewUrl)}" class="attachment-thumb" alt="" />`
@@ -1923,7 +1841,7 @@ function renderAttachments() {
     el.addEventListener("click", (e) => {
       const idx = parseInt((e.target as HTMLElement).dataset.idx || "-1", 10);
       if (idx >= 0) {
-        attachments.splice(idx, 1);
+        AppState.attachments.splice(idx, 1);
         renderAttachments();
       }
     });
@@ -1943,7 +1861,7 @@ async function handleFileDrop(file: File) {
     const res = await rpc.request.saveFileUpload({ name: file.name, dataBase64: base64 });
     if (res.success) {
       const isImage = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => file.name.toLowerCase().endsWith(e));
-      attachments.push({ name: file.name, path: res.path, previewUrl: isImage ? dataUrl : undefined });
+      AppState.attachments.push({ name: file.name, path: res.path, previewUrl: isImage ? dataUrl : undefined });
       renderAttachments();
     } else {
       alert("Failed to upload file.");
@@ -1960,10 +1878,10 @@ async function handleFileDrop(file: File) {
 async function sendMessage() {
   const input = $("#message-input") as HTMLTextAreaElement | null;
   const sendBtn = $("#send-btn") as HTMLButtonElement | null;
-  if (!input || !sendBtn || activeStreamController || !backendUrl) return;
+  if (!input || !sendBtn || AppState.activeStreamController || !AppState.backendUrl) return;
 
   let text = input.value.trim();
-  if (!text && attachments.length === 0) return;
+  if (!text && AppState.attachments.length === 0) return;
 
   // Slash commands
   if (text.startsWith("/")) {
@@ -1979,14 +1897,14 @@ async function sendMessage() {
   }
 
   // Append attachment references
-  if (attachments.length > 0) {
-    const attachText = attachments.map((a) => `[Attached file: ${a.path}]`).join("\n");
+  if (AppState.attachments.length > 0) {
+    const attachText = AppState.attachments.map((a) => `[Attached file: ${a.path}]`).join("\n");
     text = text ? `${text}\n\n${attachText}` : attachText;
   }
 
   // Prefix reply quote if active
-  if (activeReplyTo) {
-    const quote = activeReplyTo.content
+  if (AppState.activeReplyTo) {
+    const quote = AppState.activeReplyTo.content
       .split("\n")
       .map((line) => `> ${line}`)
       .join("\n");
@@ -1996,15 +1914,15 @@ async function sendMessage() {
 
   // Add user message to UI and history
   appendMessage("user", text);
-  conversation.push({ role: "user", content: text });
+  AppState.conversation.push({ role: "user", content: text });
   input.value = "";
   input.style.height = "auto";
-  attachments = [];
+  AppState.attachments = [];
   renderAttachments();
   clearDraft();
 
-  const targetSessionId = currentSessionId || "new";
-  activeStreamController = new AbortController();
+  const targetSessionId = AppState.currentSessionId || "new";
+  AppState.activeStreamController = new AbortController();
   sendBtn.disabled = true;
   sendBtn.classList.add("loading");
 
@@ -2025,38 +1943,38 @@ async function sendMessage() {
     <button class="cancel-btn">Cancel</button>
   `;
   thinking.querySelector(".cancel-btn")?.addEventListener("click", () => {
-    activeStreamController?.abort();
+    AppState.activeStreamController?.abort();
   });
   contentDiv.appendChild(thinking);
   wrapper.appendChild(avatar);
   wrapper.appendChild(contentDiv);
   messagesEl.appendChild(wrapper);
-  if (!userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!AppState.userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
   updateScrollIndicator();
 
-  const fetchTimeout = setTimeout(() => activeStreamController?.abort(), 90000);
+  const fetchTimeout = setTimeout(() => AppState.activeStreamController?.abort(), 90000);
 
   try {
     const body = {
-      model: currentModelConfig.model || "hermes-agent",
-      messages: conversation,
+      model: AppState.currentModelConfig.model || "hermes-agent",
+      messages: AppState.conversation,
       stream: true,
     };
 
-    const assistantText = await streamChatCompletion(body, contentDiv, activeStreamController.signal, targetSessionId);
-    conversation.push({ role: "assistant", content: assistantText });
+    const assistantText = await streamChatCompletion(body, contentDiv, AppState.activeStreamController.signal, targetSessionId);
+    AppState.conversation.push({ role: "assistant", content: assistantText });
   } catch (err: any) {
     if (err.name === "AbortError") {
       contentDiv.innerHTML = `<p style="color:#a3a3a3">Generation cancelled.</p>`;
-    } else if (targetSessionId !== currentSessionId) {
-      backgroundErrors.set(targetSessionId, err.message || "Stream error");
+    } else if (targetSessionId !== AppState.currentSessionId) {
+      AppState.backgroundErrors.set(targetSessionId, err.message || "Stream error");
       renderErrorBanner();
     } else {
       contentDiv.innerHTML = `<p style="color:#ef4444">Error: ${escapeHtml(err.message || String(err))}</p>`;
     }
   } finally {
     clearTimeout(fetchTimeout);
-    activeStreamController = null;
+    AppState.activeStreamController = null;
     sendBtn.disabled = false;
     sendBtn.classList.remove("loading");
     updateTokenUsageDisplay();
@@ -2071,13 +1989,13 @@ async function updateTokenUsageDisplay() {
   const label = $("#context-label");
   if (!el || !metrics) return;
   const enabled = localStorage.getItem("hermes-token-usage") === "1";
-  if (!enabled || !currentSessionId) {
+  if (!enabled || !AppState.currentSessionId) {
     el.textContent = "";
     metrics.style.display = "none";
     return;
   }
   try {
-    const data = await rpc.request.getTokenUsage({ sessionId: currentSessionId });
+    const data = await rpc.request.getTokenUsage({ sessionId: AppState.currentSessionId });
     if (data.error) {
       el.textContent = "";
       metrics.style.display = "none";
@@ -2091,7 +2009,7 @@ async function updateTokenUsageDisplay() {
     el.textContent = parts.join(" · ");
 
     // Context usage bar
-    const limit = getContextLimit(currentModelConfig.model);
+    const limit = getContextLimit(AppState.currentModelConfig.model);
     const pct = limit > 0 ? Math.min(100, (totalTokens / limit) * 100) : 0;
     if (fill && label && barWrap) {
       fill.style.width = `${pct}%`;
@@ -2109,9 +2027,9 @@ async function updateTokenUsageDisplay() {
 }
 
 function newChat() {
-  currentSessionId = "";
+  AppState.currentSessionId = "";
   updateDocumentTitle("Hermes Agent");
-  conversation = [];
+  AppState.conversation = [];
   const messagesEl = $("#messages")!;
   messagesEl.innerHTML = `
     <div class="empty-state">
@@ -2141,16 +2059,16 @@ function saveDraft() {
   if (!input) return;
   const text = input.value;
   if (text.trim()) {
-    localStorage.setItem(draftKey(currentSessionId), text);
+    localStorage.setItem(draftKey(AppState.currentSessionId), text);
   } else {
-    localStorage.removeItem(draftKey(currentSessionId));
+    localStorage.removeItem(draftKey(AppState.currentSessionId));
   }
 }
 
 function loadDraft() {
   const input = $("#message-input") as HTMLTextAreaElement | null;
   if (!input) return;
-  const text = localStorage.getItem(draftKey(currentSessionId)) || "";
+  const text = localStorage.getItem(draftKey(AppState.currentSessionId)) || "";
   input.value = text;
   input.style.height = "auto";
   input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
@@ -2158,7 +2076,7 @@ function loadDraft() {
 }
 
 function clearDraft() {
-  localStorage.removeItem(draftKey(currentSessionId));
+  localStorage.removeItem(draftKey(AppState.currentSessionId));
 }
 
 function updateComposerCount() {
@@ -2174,7 +2092,7 @@ function updateComposerCount() {
 function updateScrollIndicator() {
   const btn = $("#scroll-to-bottom");
   if (!btn) return;
-  if (userScrolledUp) {
+  if (AppState.userScrolledUp) {
     btn.classList.remove("hidden");
   } else {
     btn.classList.add("hidden");
@@ -2193,7 +2111,7 @@ function showSessionMenu(sessionId: string, displayName: string, anchor: HTMLEle
   const rect = anchor.getBoundingClientRect();
   menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left - 120}px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:6px 0;z-index:1000;min-width:140px;box-shadow:0 8px 30px rgba(0,0,0,0.25);`;
 
-  const projectSubItems = projects.map((p) => ({
+  const projectSubItems = AppState.projects.map((p) => ({
     label: `  → ${p.name}`,
     action: async () => {
       await rpc.request.moveSessionToProject({ sessionId, projectId: p.id });
@@ -2207,7 +2125,7 @@ function showSessionMenu(sessionId: string, displayName: string, anchor: HTMLEle
     { label: "Pin / Unpin", action: () => togglePinSession(sessionId) },
     { label: "Archive / Unarchive", action: () => toggleArchiveSession(sessionId) },
     { label: "Tag", action: () => tagSession(sessionId) },
-    ...(projects.length ? [{ label: "Move to project", action: () => {}, disabled: true } as any] : []),
+    ...(AppState.projects.length ? [{ label: "Move to project", action: () => {}, disabled: true } as any] : []),
     ...projectSubItems,
     { label: "Remove from project", action: async () => { await rpc.request.moveSessionToProject({ sessionId, projectId: null }); await loadSessionHistory(); } },
     { label: "Delete", action: () => deleteSession(sessionId), danger: true },
@@ -2262,7 +2180,7 @@ async function tagSession(sessionId: string) {
 async function deleteSession(sessionId: string) {
   if (!confirm("Delete this session permanently?")) return;
   await rpc.request.deleteSession({ sessionId });
-  if (currentSessionId === sessionId) newChat();
+  if (AppState.currentSessionId === sessionId) newChat();
   await loadSessionHistory();
 }
 
@@ -2361,7 +2279,7 @@ function playNotificationSound() {
 
 const SLASH_COMMANDS = [
   { name: "new", desc: "Start new chat" },
-  { name: "clear", desc: "Clear conversation" },
+  { name: "clear", desc: "Clear AppState.conversation" },
   { name: "theme", desc: "Change theme (dark/light/slate...)" },
   { name: "compact", desc: "Compact history" },
   { name: "model", desc: "Switch model" },
@@ -2381,10 +2299,10 @@ async function handleSlashCommand(cmd: string, arg: string): Promise<boolean> {
         messagesEl.innerHTML = `
           <div class="empty-state">
             <h2>Cleared</h2>
-            <p>The conversation was cleared.</p>
+            <p>The AppState.conversation was cleared.</p>
           </div>`;
       }
-      conversation = [];
+      AppState.conversation = [];
       return true;
     }
     case "theme":
@@ -2395,10 +2313,10 @@ async function handleSlashCommand(cmd: string, arg: string): Promise<boolean> {
       }
       return true;
     case "compact": {
-      if (!currentSessionId) { showToast("No active session"); return true; }
-      const res = await rpc.request.compactContext({ sessionId: currentSessionId });
+      if (!AppState.currentSessionId) { showToast("No active session"); return true; }
+      const res = await rpc.request.compactContext({ sessionId: AppState.currentSessionId });
       showToast(res.success ? "Context compacted" : "Compact failed: " + (res.error || ""));
-      if (res.success) loadSessionMessages(currentSessionId);
+      if (res.success) loadSessionMessages(AppState.currentSessionId);
       return true;
     }
     case "model": {
@@ -2410,11 +2328,11 @@ async function handleSlashCommand(cmd: string, arg: string): Promise<boolean> {
     }
     case "workspace": {
       if (!arg) { showToast("Usage: /workspace <path>"); return true; }
-      if (!currentSessionId) { showToast("No active session"); return true; }
-      const wsRes = await rpc.request.setSessionWorkspace({ sessionId: currentSessionId, workspace: arg });
+      if (!AppState.currentSessionId) { showToast("No active session"); return true; }
+      const wsRes = await rpc.request.setSessionWorkspace({ sessionId: AppState.currentSessionId, workspace: arg });
       showToast(wsRes.success ? `Workspace set to ${arg}` : "Set workspace failed: " + (wsRes.error || ""));
       if (wsRes.success) {
-        workspacePath = "";
+        AppState.workspacePath = "";
         loadWorkspace();
       }
       return true;
@@ -2479,7 +2397,6 @@ function hideSlashMenu() {
   $(".slash-menu")?.remove();
 }
 
-let cachedWorkspaceEntries: any[] = [];
 
 function hideMentionMenu() {
   $(".mention-menu")?.remove();
@@ -2493,14 +2410,14 @@ async function updateMentionMenu() {
   const match = textBefore.match(/(^|\s)@([^\s]*)$/);
   if (!match) return;
 
-  if (cachedWorkspaceEntries.length === 0) {
+  if (AppState.cachedWorkspaceEntries.length === 0) {
     try {
-      const data = await rpc.request.listWorkspace({ path: workspacePath, sessionId: currentSessionId || undefined });
-      cachedWorkspaceEntries = (data.entries || []).filter((e: any) => !e.isDirectory);
+      const data = await rpc.request.listWorkspace({ path: AppState.workspacePath, sessionId: AppState.currentSessionId || undefined });
+      AppState.cachedWorkspaceEntries = (data.entries || []).filter((e: any) => !e.isDirectory);
     } catch {}
   }
   const query = match[2].toLowerCase();
-  const items = cachedWorkspaceEntries.filter((e: any) => e.name.toLowerCase().includes(query));
+  const items = AppState.cachedWorkspaceEntries.filter((e: any) => e.name.toLowerCase().includes(query));
   if (items.length === 0) return;
 
   const rect = input.getBoundingClientRect();
@@ -2529,7 +2446,6 @@ async function updateMentionMenu() {
   document.body.appendChild(menu);
 }
 
-let systemThemeMq: MediaQueryList | null = null;
 
 function applySystemTheme() {
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2538,13 +2454,13 @@ function applySystemTheme() {
 
 function setTheme(theme: string) {
   localStorage.setItem("hermes-theme", theme);
-  if (systemThemeMq) {
-    systemThemeMq.removeEventListener("change", applySystemTheme);
-    systemThemeMq = null;
+  if (AppState.systemThemeMq) {
+    AppState.systemThemeMq.removeEventListener("change", applySystemTheme);
+    AppState.systemThemeMq = null;
   }
   if (theme === "system") {
-    systemThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
-    systemThemeMq.addEventListener("change", applySystemTheme);
+    AppState.systemThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
+    AppState.systemThemeMq.addEventListener("change", applySystemTheme);
     applySystemTheme();
   } else {
     document.documentElement.dataset.theme = theme;
@@ -2621,8 +2537,6 @@ function addSnippet() {
   renderSnippets();
 }
 
-let searchMatches: HTMLElement[] = [];
-let activeSearchIndex = -1;
 
 function toggleSearch(show?: boolean) {
   const bar = $("#chat-search-bar");
@@ -2640,8 +2554,8 @@ function toggleSearch(show?: boolean) {
 }
 
 function clearSearch() {
-  searchMatches = [];
-  activeSearchIndex = -1;
+  AppState.searchMatches = [];
+  AppState.activeSearchIndex = -1;
   const countEl = $("#chat-search-count");
   if (countEl) countEl.textContent = "0/0";
   $$<HTMLElement>("mark.search-highlight, mark.search-highlight-active").forEach((mark) => {
@@ -2695,9 +2609,9 @@ function performSearch(query: string) {
   $$<HTMLElement>("#messages .message-content").forEach((content) => {
     highlightTextNodes(content, q);
   });
-  searchMatches = $$<HTMLElement>("mark.search-highlight");
-  if (searchMatches.length > 0) {
-    activeSearchIndex = -1;
+  AppState.searchMatches = $$<HTMLElement>("mark.search-highlight");
+  if (AppState.searchMatches.length > 0) {
+    AppState.activeSearchIndex = -1;
     navigateSearch(1);
   } else {
     const countEl = $("#chat-search-count");
@@ -2706,18 +2620,18 @@ function performSearch(query: string) {
 }
 
 function navigateSearch(dir: 1 | -1) {
-  if (searchMatches.length === 0) return;
-  if (activeSearchIndex >= 0 && activeSearchIndex < searchMatches.length) {
-    searchMatches[activeSearchIndex].classList.remove("search-highlight-active");
-    searchMatches[activeSearchIndex].classList.add("search-highlight");
+  if (AppState.searchMatches.length === 0) return;
+  if (AppState.activeSearchIndex >= 0 && AppState.activeSearchIndex < AppState.searchMatches.length) {
+    AppState.searchMatches[AppState.activeSearchIndex].classList.remove("search-highlight-active");
+    AppState.searchMatches[AppState.activeSearchIndex].classList.add("search-highlight");
   }
-  activeSearchIndex = (activeSearchIndex + dir + searchMatches.length) % searchMatches.length;
-  const mark = searchMatches[activeSearchIndex];
+  AppState.activeSearchIndex = (AppState.activeSearchIndex + dir + AppState.searchMatches.length) % AppState.searchMatches.length;
+  const mark = AppState.searchMatches[AppState.activeSearchIndex];
   mark.classList.remove("search-highlight");
   mark.classList.add("search-highlight-active");
   mark.scrollIntoView({ behavior: "smooth", block: "center" });
   const countEl = $("#chat-search-count");
-  if (countEl) countEl.textContent = `${activeSearchIndex + 1}/${searchMatches.length}`;
+  if (countEl) countEl.textContent = `${AppState.activeSearchIndex + 1}/${AppState.searchMatches.length}`;
 }
 
 function showSnippetMenu() {
@@ -2904,7 +2818,7 @@ const PALETTE_COMMANDS = [
   { id: "focusInput", label: "Focus composer", shortcut: "Ctrl/Cmd+K", action: () => focusInput() },
   { id: "toggleSearch", label: "Search messages", shortcut: "Ctrl/Cmd+Shift+F", action: () => toggleSearch(true) },
   { id: "toggleCompare", label: "Open model compare", action: () => toggleCompareMode(true) },
-  { id: "exportMarkdown", label: "Export conversation to Markdown", action: () => exportToMarkdown() },
+  { id: "exportMarkdown", label: "Export AppState.conversation to Markdown", action: () => exportToMarkdown() },
   { id: "exportPDF", label: "Print / Save as PDF", action: () => exportToPDF() },
   { id: "toggleSettings", label: "Open settings", action: () => openSettings() },
   { id: "toggleShortcuts", label: "Keyboard shortcuts", shortcut: "? or Ctrl/", action: () => showShortcutsOverlay() },
@@ -2914,7 +2828,6 @@ const PALETTE_COMMANDS = [
   { id: "reloadWindow", label: "Reload window", action: () => location.reload() },
 ];
 
-let paletteActiveIndex = -1;
 
 function showCommandPalette() {
   const palette = $("#command-palette");
@@ -2925,13 +2838,13 @@ function showCommandPalette() {
     input.value = "";
     input.focus();
   }
-  paletteActiveIndex = -1;
+  AppState.paletteActiveIndex = -1;
   renderCommandPalette("");
 }
 
 function hideCommandPalette() {
   $("#command-palette")?.classList.add("hidden");
-  paletteActiveIndex = -1;
+  AppState.paletteActiveIndex = -1;
 }
 
 function renderCommandPalette(query: string) {
@@ -2955,7 +2868,7 @@ function renderCommandPalette(query: string) {
     el.addEventListener("mouseenter", () => {
       list.querySelectorAll(".command-palette-item").forEach((i) => i.classList.remove("active"));
       el.classList.add("active");
-      paletteActiveIndex = parseInt((el as HTMLElement).dataset.idx || "-1", 10);
+      AppState.paletteActiveIndex = parseInt((el as HTMLElement).dataset.idx || "-1", 10);
     });
     el.addEventListener("click", () => {
       const id = (el as HTMLElement).dataset.id;
@@ -2963,7 +2876,7 @@ function renderCommandPalette(query: string) {
       if (cmd) { hideCommandPalette(); cmd.action(); }
     });
   });
-  paletteActiveIndex = 0;
+  AppState.paletteActiveIndex = 0;
 }
 
 function showShortcutsOverlay() {
@@ -3007,7 +2920,7 @@ async function runComparison() {
       stream: true,
     };
     try {
-      await streamChatCompletion(body, container, ctrl.signal, currentSessionId || "new");
+      await streamChatCompletion(body, container, ctrl.signal, AppState.currentSessionId || "new");
     } catch (err: any) {
       container.innerHTML = `<p style="color:#ef4444">Error: ${escapeHtml(err.message || String(err))}</p>`;
     }
@@ -3017,17 +2930,17 @@ async function runComparison() {
 }
 
 function exportToMarkdown() {
-  if (!conversation.length) {
-    showToast("No conversation to export");
+  if (!AppState.conversation.length) {
+    showToast("No AppState.conversation to export");
     return;
   }
   const lines: string[] = [];
   lines.push(`# Hermes Agent Conversation`);
   lines.push("");
-  if (currentSessionId) lines.push(`Session: ${currentSessionId}`);
+  if (AppState.currentSessionId) lines.push(`Session: ${AppState.currentSessionId}`);
   lines.push(`Date: ${new Date().toISOString()}`);
   lines.push("");
-  conversation.forEach((msg) => {
+  AppState.conversation.forEach((msg) => {
     const roleTitle = msg.role === "user" ? "User" : "Assistant";
     lines.push(`## ${roleTitle}`);
     lines.push("");
@@ -3038,7 +2951,7 @@ function exportToMarkdown() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `hermes-${currentSessionId || "chat"}-${Date.now()}.md`;
+  a.download = `hermes-${AppState.currentSessionId || "chat"}-${Date.now()}.md`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -3046,8 +2959,8 @@ function exportToMarkdown() {
 }
 
 function exportToPDF() {
-  if (!conversation.length) {
-    showToast("No conversation to print");
+  if (!AppState.conversation.length) {
+    showToast("No AppState.conversation to print");
     return;
   }
   const iframe = document.createElement("iframe");
@@ -3081,10 +2994,10 @@ function exportToPDF() {
 </head>
 <body>
 <h1>Hermes Agent Conversation</h1>
-<div class="meta">Session: ${escapeHtml(currentSessionId || "—")}<br>Date: ${new Date().toISOString()}</div>
+<div class="meta">Session: ${escapeHtml(AppState.currentSessionId || "—")}<br>Date: ${new Date().toISOString()}</div>
 `;
 
-  conversation.forEach((msg) => {
+  AppState.conversation.forEach((msg) => {
     const roleLabel = msg.role === "user" ? "User" : "Assistant";
     html += `<div class="msg"><div class="role">${roleLabel}</div><div class="content">${formatContentForPrint(msg.content || "")}</div></div>`;
   });
@@ -3130,10 +3043,10 @@ function renderReplyBar() {
   const bar = $("#reply-bar");
   const preview = $("#reply-preview");
   if (!bar || !preview) return;
-  if (activeReplyTo) {
+  if (AppState.activeReplyTo) {
     bar.classList.remove("hidden");
-    const snippet = activeReplyTo.content.replace(/\s+/g, " ").trim().slice(0, 100);
-    preview.textContent = snippet || (activeReplyTo.role === "user" ? "User message" : "Assistant message");
+    const snippet = AppState.activeReplyTo.content.replace(/\s+/g, " ").trim().slice(0, 100);
+    preview.textContent = snippet || (AppState.activeReplyTo.role === "user" ? "User message" : "Assistant message");
   } else {
     bar.classList.add("hidden");
     preview.textContent = "";
@@ -3144,24 +3057,22 @@ function replyToMessage(wrapper: HTMLElement) {
   const messagesEl = $("#messages")!;
   const all = Array.from(messagesEl.querySelectorAll(".message"));
   const idx = all.indexOf(wrapper);
-  if (idx < 0 || idx >= conversation.length) return;
-  const msg = conversation[idx];
-  activeReplyTo = { role: msg.role, content: msg.content };
+  if (idx < 0 || idx >= AppState.conversation.length) return;
+  const msg = AppState.conversation[idx];
+  AppState.activeReplyTo = { role: msg.role, content: msg.content };
   renderReplyBar();
   const input = $("#message-input") as HTMLTextAreaElement | null;
   input?.focus();
 }
 
 function cancelReply() {
-  activeReplyTo = null;
+  AppState.activeReplyTo = null;
   renderReplyBar();
 }
 
 // ---------------------------------------------------------------------------
 // Onboarding (Install + Setup Wizard)
 // ---------------------------------------------------------------------------
-let onboardingResolved = false;
-let installLogBuffer = "";
 
 function showOverlay() {
   $("#onboarding-overlay")?.classList.remove("hidden");
@@ -3192,8 +3103,8 @@ function appendInstallLog(msg: { stream: string; text: string }) {
   const logEl = $("#install-log") as HTMLElement | null;
   if (!logEl) return;
   const prefix = msg.stream === "stderr" ? "[ERR] " : "";
-  installLogBuffer += prefix + msg.text;
-  logEl.textContent = installLogBuffer;
+  AppState.installLogBuffer += prefix + msg.text;
+  logEl.textContent = AppState.installLogBuffer;
   logEl.scrollTop = logEl.scrollHeight;
 }
 
@@ -3301,13 +3212,13 @@ async function handleInstallStatus(status: { phase: string; progress?: number; m
 
   if (status.phase === "ready") {
     hideOverlay();
-    if (!onboardingResolved) {
-      onboardingResolved = true;
+    if (!AppState.onboardingResolved) {
+      AppState.onboardingResolved = true;
       // Trigger backend status refresh so chat UI can initialize
       rpc.request.getBackendStatus({}).then((s) => {
         updateBackendStatusUI(s);
         if (s.running) {
-          backendUrl = s.url;
+          AppState.backendUrl = s.url;
           initAfterBackendReady();
         }
       });
@@ -3454,8 +3365,8 @@ function initPage() {
           hd.textContent = "Backend: running=" + s.running + " url=" + s.url;
         }
         updateBackendStatusUI(s);
-        if (s.running && !backendUrl) {
-          backendUrl = s.url;
+        if (s.running && !AppState.backendUrl) {
+          AppState.backendUrl = s.url;
           initAfterBackendReady();
           return;
         }
@@ -3753,9 +3664,9 @@ function initPage() {
     timestampsToggle.checked = localStorage.getItem("hermes-show-timestamps") !== "0";
     timestampsToggle.addEventListener("change", () => {
       localStorage.setItem("hermes-show-timestamps", timestampsToggle.checked ? "1" : "0");
-      if (currentSessionId) {
+      if (AppState.currentSessionId) {
         const name = document.title.replace(" — Hermes Agent", "");
-        loadSessionMessages(currentSessionId, name || undefined);
+        loadSessionMessages(AppState.currentSessionId, name || undefined);
       }
     });
   }
@@ -3850,7 +3761,7 @@ function initPage() {
   if (sessionsList) {
     sessionsList.addEventListener("dragover", (e) => {
       e.preventDefault();
-      if (!draggedSessionId) return;
+      if (!AppState.draggedSessionId) return;
       const after = getDragAfterElement(sessionsList as HTMLElement, e.clientY);
       let indicator = $(".drop-indicator");
       if (!indicator) {
@@ -3868,9 +3779,9 @@ function initPage() {
     sessionsList.addEventListener("drop", async (e) => {
       e.preventDefault();
       $(".drop-indicator")?.remove();
-      if (!draggedSessionId) return;
+      if (!AppState.draggedSessionId) return;
       const after = getDragAfterElement(sessionsList as HTMLElement, e.clientY);
-      const draggedEl = sessionsList.querySelector(`[data-id="${draggedSessionId}"]`) as HTMLElement | null;
+      const draggedEl = sessionsList.querySelector(`[data-id="${AppState.draggedSessionId}"]`) as HTMLElement | null;
       if (draggedEl) {
         if (after) sessionsList.insertBefore(draggedEl, after);
         else sessionsList.appendChild(draggedEl);
@@ -3918,7 +3829,7 @@ function initPage() {
   $("#memory-save-btn")?.addEventListener("click", saveMemory);
   $$<HTMLButtonElement>(".memory-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      activeMemorySection = (btn.dataset.section as "memory" | "user") || "memory";
+      AppState.activeMemorySection = (btn.dataset.section as "memory" | "user") || "memory";
       $$<HTMLButtonElement>(".memory-tab").forEach((b) => b.classList.toggle("active", b === btn));
       loadMemory();
     });
@@ -3946,23 +3857,23 @@ function initPage() {
       const items = list ? Array.from(list.querySelectorAll<HTMLDivElement>(".command-palette-item")) : [];
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        if (paletteActiveIndex >= 0) items[paletteActiveIndex]?.classList.remove("active");
-        paletteActiveIndex = (paletteActiveIndex + 1) % items.length;
-        items[paletteActiveIndex]?.classList.add("active");
-        items[paletteActiveIndex]?.scrollIntoView({ block: "nearest" });
+        if (AppState.paletteActiveIndex >= 0) items[AppState.paletteActiveIndex]?.classList.remove("active");
+        AppState.paletteActiveIndex = (AppState.paletteActiveIndex + 1) % items.length;
+        items[AppState.paletteActiveIndex]?.classList.add("active");
+        items[AppState.paletteActiveIndex]?.scrollIntoView({ block: "nearest" });
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        if (paletteActiveIndex >= 0) items[paletteActiveIndex]?.classList.remove("active");
-        paletteActiveIndex = (paletteActiveIndex - 1 + items.length) % items.length;
-        items[paletteActiveIndex]?.classList.add("active");
-        items[paletteActiveIndex]?.scrollIntoView({ block: "nearest" });
+        if (AppState.paletteActiveIndex >= 0) items[AppState.paletteActiveIndex]?.classList.remove("active");
+        AppState.paletteActiveIndex = (AppState.paletteActiveIndex - 1 + items.length) % items.length;
+        items[AppState.paletteActiveIndex]?.classList.add("active");
+        items[AppState.paletteActiveIndex]?.scrollIntoView({ block: "nearest" });
         return;
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        const activeId = items[paletteActiveIndex]?.dataset.id;
+        const activeId = items[AppState.paletteActiveIndex]?.dataset.id;
         const cmd = PALETTE_COMMANDS.find((c) => c.id === activeId);
         if (cmd) { hideCommandPalette(); cmd.action(); }
         return;
@@ -4102,8 +4013,8 @@ function initPage() {
       setDebug(`poll #${pollCount}: running=${s.running} url=${s.url}`);
       updateBackendStatusUI(s);
       if (s.running) {
-        if (!backendUrl) {
-          backendUrl = s.url;
+        if (!AppState.backendUrl) {
+          AppState.backendUrl = s.url;
           initAfterBackendReady();
         }
         clearInterval(pollInterval);
@@ -4136,7 +4047,7 @@ function initPage() {
   if (messagesEl) {
     messagesEl.addEventListener("scroll", () => {
       const atBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - SCROLL_PAUSE_THRESHOLD;
-      userScrolledUp = !atBottom;
+      AppState.userScrolledUp = !atBottom;
       updateScrollIndicator();
     });
   }
@@ -4146,7 +4057,7 @@ function initPage() {
     const messagesEl = $("#messages");
     if (messagesEl) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      userScrolledUp = false;
+      AppState.userScrolledUp = false;
       updateScrollIndicator();
     }
   });
@@ -4173,7 +4084,7 @@ function initPage() {
 function showApprovalCard(sessionId: string, pending: any) {
   const messagesEl = $("#messages");
   if (!messagesEl) return;
-  const existing = activeApprovalCards.get(sessionId);
+  const existing = AppState.activeApprovalCards.get(sessionId);
   if (existing) existing.remove();
 
   const card = document.createElement("div");
@@ -4196,22 +4107,22 @@ function showApprovalCard(sessionId: string, pending: any) {
         await rpc.request.respondApproval({ sessionId, choice, patternKeys: JSON.parse(keys) });
       } catch {}
       card.remove();
-      activeApprovalCards.delete(sessionId);
+      AppState.activeApprovalCards.delete(sessionId);
     });
   });
   messagesEl.appendChild(card);
-  if (!userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!AppState.userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
   updateScrollIndicator();
-  activeApprovalCards.set(sessionId, card);
+  AppState.activeApprovalCards.set(sessionId, card);
 }
 
 function startApprovalPolling() {
   setInterval(async () => {
-    if (!currentSessionId) return;
+    if (!AppState.currentSessionId) return;
     try {
-      const data = await rpc.request.getPendingApproval({ sessionId: currentSessionId });
-      if (data.pending && !activeApprovalCards.has(currentSessionId)) {
-        showApprovalCard(currentSessionId, data.pending);
+      const data = await rpc.request.getPendingApproval({ sessionId: AppState.currentSessionId });
+      if (data.pending && !AppState.activeApprovalCards.has(AppState.currentSessionId)) {
+        showApprovalCard(AppState.currentSessionId, data.pending);
       }
     } catch {}
   }, 2000);
