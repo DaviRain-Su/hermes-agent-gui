@@ -428,7 +428,7 @@ class MessageBlockBuilder {
   }
 }
 
-export async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: AbortSignal, targetSessionId: string) {
+export async function streamChatCompletion(body: any, contentDiv: HTMLElement, signal: AbortSignal, targetSessionId: string): Promise<{ content: string; toolCalls?: any[] }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (AppState.currentSessionId) {
     headers["X-Hermes-Session-Id"] = AppState.currentSessionId;
@@ -458,7 +458,9 @@ export async function streamChatCompletion(body: any, contentDiv: HTMLElement, s
   // If backend returned plain JSON (non-streaming), parse it directly.
   if (!contentType.includes("text/event-stream") || !response.body) {
     const json: any = await response.json().catch(() => ({}));
-    const content = json.choices?.[0]?.message?.content || json.message || JSON.stringify(json);
+    const message = json.choices?.[0]?.message || {};
+    const content = message.content || json.message || JSON.stringify(json);
+    const toolCalls = message.tool_calls || undefined;
     if (typeof content === "string") {
       contentDiv.innerHTML = formatContent(content);
       _postProcessInlineToolCodes(contentDiv);
@@ -470,13 +472,14 @@ export async function streamChatCompletion(body: any, contentDiv: HTMLElement, s
       AppState.currentSessionId = sessionHeader;
       loadSessionHistory();
     }
-    return typeof content === "string" ? content : "";
+    return { content: typeof content === "string" ? content : "", toolCalls };
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   const builder = new MessageBlockBuilder(contentDiv);
+  let toolCalls: any[] | undefined = undefined;
   let lastDataTime = Date.now();
   const readTimeoutMs = 40000;
 
@@ -514,6 +517,19 @@ export async function streamChatCompletion(body: any, contentDiv: HTMLElement, s
             const messagesEl = $("#messages")!;
             if (!AppState.userScrolledUp) messagesEl.scrollTop = messagesEl.scrollHeight;
             updateScrollIndicator();
+          }
+          if (delta?.tool_calls) {
+            if (!toolCalls) toolCalls = [];
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              if (!toolCalls[idx]) {
+                toolCalls[idx] = { id: tc.id || "", type: tc.type || "function", function: { name: "", arguments: "" } };
+              }
+              if (tc.id) toolCalls[idx].id = tc.id;
+              if (tc.type) toolCalls[idx].type = tc.type;
+              if (tc.function?.name) toolCalls[idx].function.name += tc.function.name;
+              if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments;
+            }
           }
           // Some backends wrap errors inside SSE data
           if (parsed.error) {
@@ -569,9 +585,10 @@ export async function streamChatCompletion(body: any, contentDiv: HTMLElement, s
   }
 
   // Reconstruct full text from blocks for AppState.conversation history
-  return builder.blocks
+  const content = builder.blocks
     .map((b) => (b.type === "text" ? b.content : `\`${b.name}\``))
     .join("");
+  return { content, toolCalls };
 }
 
 export function _postProcessInlineToolCodes(el: HTMLElement) {
@@ -679,6 +696,92 @@ export async function handleFileDrop(file: File) {
   }
 }
 
+async function runAgentLoop(body: any, contentDiv: HTMLElement, controller: AbortController, targetSessionId: string) {
+  const maxSteps = 10;
+  for (let step = 0; step < maxSteps; step++) {
+    let tools: any[] = [];
+    const toolServerMap = new Map<string, string>();
+    try {
+      const toolRes = await rpc.request.listMcpTools({});
+      tools = (toolRes.tools || []).map((t: any) => {
+        toolServerMap.set(t.name, t.server || "");
+        return {
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description || "",
+            parameters: t.inputSchema || { type: "object", properties: {} },
+          },
+        };
+      });
+    } catch (e) {
+      console.error("Failed to list MCP tools:", e);
+    }
+
+    const stepBody = { ...body, ...(tools.length > 0 ? { tools } : {}) };
+    const stepIndicator = document.createElement("div");
+    stepIndicator.className = "agent-step running";
+    stepIndicator.textContent = `Thinking... (step ${step + 1})`;
+    contentDiv.appendChild(stepIndicator);
+    if (!AppState.userScrolledUp) {
+      const messagesEl = $("#messages")!;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    const result = await streamChatCompletion(stepBody, contentDiv, controller.signal, targetSessionId);
+    stepIndicator.className = "agent-step done";
+    stepIndicator.textContent = `Step ${step + 1} complete`;
+
+    const assistantMsg: any = { role: "assistant", content: result.content };
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      assistantMsg.tool_calls = result.toolCalls;
+    }
+    AppState.conversation.push(assistantMsg);
+
+    if (!result.toolCalls || result.toolCalls.length === 0) {
+      break;
+    }
+
+    for (const tc of result.toolCalls) {
+      const toolIndicator = document.createElement("div");
+      toolIndicator.className = "agent-step running";
+      toolIndicator.textContent = `Executing ${tc.function.name}...`;
+      contentDiv.appendChild(toolIndicator);
+      if (!AppState.userScrolledUp) {
+        const messagesEl = $("#messages")!;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      let toolResultText = "";
+      try {
+        const server = toolServerMap.get(tc.function.name) || "";
+        const toolRes = await rpc.request.callMcpTool({
+          server,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments || "{}"),
+        });
+        toolResultText = typeof toolRes.content === "string" ? toolRes.content : JSON.stringify(toolRes.content);
+        toolIndicator.className = "agent-step done";
+        toolIndicator.textContent = `${tc.function.name} executed`;
+      } catch (e: any) {
+        toolResultText = `Error: ${e.message || String(e)}`;
+        toolIndicator.className = "agent-step";
+        toolIndicator.style.color = "#ef4444";
+        toolIndicator.textContent = `${tc.function.name} failed: ${toolResultText}`;
+      }
+
+      AppState.conversation.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        name: tc.function.name,
+        content: toolResultText,
+      });
+    }
+
+    body.messages = [...AppState.conversation];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Send Message
 // ---------------------------------------------------------------------------
@@ -768,8 +871,12 @@ export async function sendMessage() {
       stream: true,
     };
 
-    const assistantText = await streamChatCompletion(body, contentDiv, AppState.activeStreamController.signal, targetSessionId);
-    AppState.conversation.push({ role: "assistant", content: assistantText });
+    if (AppState.agentMode) {
+      await runAgentLoop(body, contentDiv, AppState.activeStreamController, targetSessionId);
+    } else {
+      const result = await streamChatCompletion(body, contentDiv, AppState.activeStreamController.signal, targetSessionId);
+      AppState.conversation.push({ role: "assistant", content: result.content });
+    }
   } catch (err: any) {
     if (err.name === "AbortError") {
       contentDiv.innerHTML = `<p style="color:#a3a3a3">Generation cancelled.</p>`;

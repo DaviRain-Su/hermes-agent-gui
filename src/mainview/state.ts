@@ -77,6 +77,7 @@ export const AppState = {
   attachments: [] as Attachment[],
   currentModelConfig: { model: "", provider: "" },
   backgroundErrors: new Map<string, string>(),
+  agentMode: false,
   workspacePath: "",
   previewHasChanges: false,
   activeApprovalCards: new Map<string, HTMLElement>(),

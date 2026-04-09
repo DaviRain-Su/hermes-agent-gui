@@ -3278,3 +3278,85 @@ html, body {
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+.agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.agent-toggle input {
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  position: relative;
+  outline: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: background 0.2s;
+}
+
+.agent-toggle input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.agent-toggle input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.agent-toggle input:checked::before {
+  background: #fff;
+  transform: translateX(14px);
+}
+
+.agent-toggle span {
+  font-weight: 500;
+}
+
+/* Agent step indicator in messages */
+.agent-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.agent-step.running::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--text-secondary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.agent-step.done::before {
+  content: "✓";
+  font-size: 10px;
+  color: var(--success);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

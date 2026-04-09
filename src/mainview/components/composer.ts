@@ -267,4 +267,20 @@ export async function updateMentionMenu() {
   document.body.appendChild(menu);
 }
 
+export function toggleAgentMode(enabled?: boolean) {
+  const checkbox = $("#agent-mode") as HTMLInputElement | null;
+  if (checkbox) {
+    if (typeof enabled === "boolean") checkbox.checked = enabled;
+    AppState.agentMode = checkbox.checked;
+    localStorage.setItem("hermes-agent-mode", AppState.agentMode ? "1" : "0");
+  }
+}
+
+export function initAgentMode() {
+  const saved = localStorage.getItem("hermes-agent-mode") === "1";
+  const checkbox = $("#agent-mode") as HTMLInputElement | null;
+  if (checkbox) checkbox.checked = saved;
+  AppState.agentMode = saved;
+}
+
 

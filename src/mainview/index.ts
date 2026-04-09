@@ -23,6 +23,8 @@ import {
   hideSlashMenu,
   hideMentionMenu,
   updateMentionMenu,
+  toggleAgentMode,
+  initAgentMode,
 } from "./components/composer.js";
 import {
   renderErrorBanner,
@@ -858,6 +860,7 @@ function initPage() {
   setDebug("initPage() running...");
   const savedTheme = localStorage.getItem("hermes-theme") || "dark";
   setTheme(savedTheme);
+  initAgentMode();
   checkAuth();
 
   // Connect to backend via HTTP-RPC
@@ -894,6 +897,7 @@ function initPage() {
   })();
 
   $("#send-btn")?.addEventListener("click", sendMessage);
+  $("#agent-mode")?.addEventListener("change", () => toggleAgentMode());
 
   $("#new-chat-btn")?.addEventListener("click", newChat);
 
