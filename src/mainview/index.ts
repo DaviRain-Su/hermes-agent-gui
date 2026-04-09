@@ -3704,7 +3704,7 @@ function initPage() {
   document.addEventListener("click", (e) => {
     hideWorkspaceContextMenu();
     const target = e.target as HTMLElement;
-    if (target.tagName === "IMG" && (target.closest(".message-content") || target.closest("#preview-content"))) {
+    if (target.tagName === "IMG" && (target.closest(".message-content") || target.closest("#preview-content") || target.closest(".attachment-chip"))) {
       openLightbox((target as HTMLImageElement).src);
     }
   });
