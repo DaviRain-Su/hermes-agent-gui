@@ -6,13 +6,18 @@ const views = [
 ];
 
 for (const view of views) {
-  const proc = Bun.spawnSync(["bun", "build", view.tsSrc, "--target", "browser", "--outfile", view.outJs]);
+  // Remove stale bundle output so bun resolves the .ts source instead of an old .js file
+  try { Bun.file(view.outJs).delete(); } catch {}
+  const proc = Bun.spawnSync(["bun", "build", view.tsSrc, "--target", "browser", "--outfile", view.outJs, "--no-minify"]);
   if (proc.exitCode !== 0) {
     console.error(`Failed to build ${view.tsSrc}`);
     console.error(proc.stderr.toString());
     process.exit(1);
   }
-  const jsContent = readFileSync(view.outJs, "utf-8");
+  let jsContent = readFileSync(view.outJs, "utf-8");
+  // Strip trailing ESM exports since the script runs in a plain script context
+  jsContent = jsContent.replace(/export\s*\{[\s\S]*?\};\s*$/, "");
+  writeFileSync(view.outJs, jsContent);
 
   // Generate inline HTML (for electrobun legacy / packaging)
   let inlineHtml = readFileSync(view.htmlSrc, "utf-8");
