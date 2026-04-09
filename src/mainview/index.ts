@@ -99,6 +99,8 @@ import {
   exportToMarkdown,
   exportToPDF,
   setPassword,
+  loadMcpServers,
+  addMcpServerForm,
 } from "./components/settings.js";
 import {
   loadWorkspace,
@@ -1224,6 +1226,7 @@ function initPage() {
   $("#custom-css-save")?.addEventListener("click", saveCustomCSS);
   $("#gist-backup")?.addEventListener("click", backupToGist);
   $("#gist-restore")?.addEventListener("click", restoreFromGist);
+  $("#mcp-add-btn")?.addEventListener("click", addMcpServerForm);
   $("#set-password-btn")?.addEventListener("click", setPassword);
   const patInput = $("#gist-pat") as HTMLInputElement | null;
   if (patInput) {

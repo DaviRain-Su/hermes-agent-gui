@@ -23,6 +23,14 @@ import {
   type SetupFieldDef,
   type SubmitSetupResult,
 } from "./setup";
+import {
+  initMcpManager,
+  listMcpServers,
+  addMcpServer,
+  removeMcpServer,
+  listMcpTools,
+  callMcpTool,
+} from "../mcp-manager";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -415,6 +423,12 @@ type AppRPCSchema = {
       uninstallSkill: { params: { name: string }; response: { success: boolean; error?: string } };
       enableSkill: { params: { name: string }; response: { success: boolean; error?: string } };
       disableSkill: { params: { name: string }; response: { success: boolean; error?: string } };
+      // MCP
+      listMcpServers: { params: {}; response: any[] };
+      addMcpServer: { params: any; response: { success: boolean; error?: string } };
+      removeMcpServer: { params: { name: string }; response: { success: boolean } };
+      listMcpTools: { params: {}; response: { tools: any[] } };
+      callMcpTool: { params: { server: string; name: string; arguments: any }; response: any };
     };
     messages: {};
   }>;
@@ -665,6 +679,13 @@ const rpcHandlers: AppRPCSchema["bun"]["handlers"] = {
         return { success: false, error: e.message };
       }
     },
+
+    // MCP
+    listMcpServers: async () => listMcpServers(),
+    addMcpServer: async (params) => addMcpServer(params),
+    removeMcpServer: async ({ name }) => removeMcpServer(name),
+    listMcpTools: async () => listMcpTools(),
+    callMcpTool: async (params) => callMcpTool(params),
   },
   messages: {},
 };
@@ -731,6 +752,7 @@ if (!HTTP_RPC_PORT) {
 // ---------------------------------------------------------------------------
 console.log(`${APP_NAME} backend service starting...`);
 bootstrapApp();
+initMcpManager();
 
 // Graceful shutdown on SIGTERM/SIGINT
 process.on("SIGTERM", async () => {

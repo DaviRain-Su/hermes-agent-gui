@@ -154,6 +154,7 @@ export function openSettings() {
     btn.classList.toggle("active", (btn as HTMLButtonElement).dataset.theme === savedTheme);
   });
   renderSnippets();
+  loadMcpServers();
   const cssInput = $("#custom-css-input") as HTMLTextAreaElement | null;
   if (cssInput) cssInput.value = localStorage.getItem("hermes-custom-css") || "";
 }
@@ -443,6 +444,141 @@ export async function setPassword() {
     }
   } catch (e: any) {
     if (status) status.textContent = "Error: " + (e.message || String(e));
+  }
+}
+
+export async function loadMcpServers() {
+  try {
+    const servers = await rpc.request.listMcpServers({});
+    renderMcpServers(servers || []);
+  } catch (e) {
+    console.error("Failed to load MCP servers:", e);
+    const container = $("#mcp-server-list");
+    if (container) container.innerHTML = '<div class="panel-empty">Error loading MCP servers</div>';
+  }
+}
+
+export function renderMcpServers(servers: any[]) {
+  const container = $("#mcp-server-list");
+  if (!container) return;
+  if (servers.length === 0) {
+    container.innerHTML = '<div class="panel-empty">No MCP servers configured</div>';
+    return;
+  }
+  container.innerHTML = servers.map((s: any) => `
+    <div class="mcp-item ${s.enabled !== false ? 'enabled' : 'disabled'}" data-name="${escapeHtml(s.name)}">
+      <div class="mcp-main">
+        <span class="mcp-dot ${s.connected ? 'on' : ''}"></span>
+        <span class="mcp-name">${escapeHtml(s.name)}</span>
+        <span class="mcp-transport">${escapeHtml(s.transport)}</span>
+      </div>
+      <div class="mcp-actions">
+        <button class="icon-btn mcp-toggle-btn" title="${s.enabled !== false ? 'Disable' : 'Enable'}">${s.enabled !== false ? '⏸' : '▶'}</button>
+        <button class="icon-btn mcp-tools-btn" title="View tools">🔧</button>
+        <button class="icon-btn mcp-remove-btn" title="Remove">✕</button>
+      </div>
+      <div class="mcp-tools hidden"></div>
+    </div>
+  `).join("");
+  container.querySelectorAll(".mcp-item").forEach((el) => {
+    const name = (el as HTMLElement).dataset.name || "";
+    el.querySelector(".mcp-toggle-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMcpServer(name);
+    });
+    el.querySelector(".mcp-remove-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeMcpServerHandler(name);
+    });
+    el.querySelector(".mcp-tools-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      expandMcpTools(el as HTMLElement, name);
+    });
+  });
+}
+
+export async function addMcpServerForm() {
+  const nameEl = $("#mcp-name") as HTMLInputElement | null;
+  const transportEl = $("#mcp-transport") as HTMLSelectElement | null;
+  const commandEl = $("#mcp-command") as HTMLInputElement | null;
+  const argsEl = $("#mcp-args") as HTMLInputElement | null;
+  const name = nameEl?.value.trim();
+  const transport = transportEl?.value as "stdio" | "sse";
+  const command = commandEl?.value.trim();
+  const args = argsEl?.value.trim().split(/\s+/).filter(Boolean) || [];
+  if (!name || !command) {
+    showToast("Name and command/URL are required");
+    return;
+  }
+  try {
+    const res = await rpc.request.addMcpServer({
+      name,
+      transport,
+      command,
+      args: transport === "stdio" ? args : undefined,
+      url: transport === "sse" ? command : undefined,
+      enabled: true,
+    });
+    if (res.success) {
+      nameEl && (nameEl.value = "");
+      commandEl && (commandEl.value = "");
+      argsEl && (argsEl.value = "");
+      await loadMcpServers();
+    } else {
+      showToast(res.error || "Failed to add MCP server");
+    }
+  } catch (e: any) {
+    showToast("Error: " + (e.message || String(e)));
+  }
+}
+
+export async function toggleMcpServer(name: string) {
+  try {
+    const servers: any[] = await rpc.request.listMcpServers({});
+    const s = servers.find((x) => x.name === name);
+    if (!s) return;
+    const enabled = s.enabled === false ? true : false;
+    await rpc.request.addMcpServer({ ...s, enabled });
+    await loadMcpServers();
+  } catch (e: any) {
+    showToast("Error: " + (e.message || String(e)));
+  }
+}
+
+export async function removeMcpServerHandler(name: string) {
+  if (!confirm(`Remove MCP server "${name}"?`)) return;
+  try {
+    await rpc.request.removeMcpServer({ name });
+    await loadMcpServers();
+  } catch (e: any) {
+    showToast("Error: " + (e.message || String(e)));
+  }
+}
+
+export async function expandMcpTools(el: HTMLElement, serverName: string) {
+  const toolsEl = el.querySelector(".mcp-tools") as HTMLElement | null;
+  if (!toolsEl) return;
+  if (!toolsEl.classList.contains("hidden")) {
+    toolsEl.classList.add("hidden");
+    return;
+  }
+  try {
+    const data = await rpc.request.listMcpTools({});
+    const tools = (data.tools || []).filter((t: any) => t.server === serverName);
+    if (tools.length === 0) {
+      toolsEl.innerHTML = '<div class="panel-empty" style="padding:4px 0">No tools available</div>';
+    } else {
+      toolsEl.innerHTML = tools.map((t: any) => `
+        <div class="mcp-tool">
+          <span class="mcp-tool-name">${escapeHtml(t.name)}</span>
+          <span class="mcp-tool-desc">${escapeHtml(t.description || "")}</span>
+        </div>
+      `).join("");
+    }
+    toolsEl.classList.remove("hidden");
+  } catch (e: any) {
+    toolsEl.innerHTML = '<div class="panel-empty" style="padding:4px 0">Error loading tools</div>';
+    toolsEl.classList.remove("hidden");
   }
 }
 

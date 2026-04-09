@@ -456,6 +456,20 @@
           <div id="gist-status" style="font-size:11px;color:var(--text-secondary);margin-top:4px"></div>
         </div>
         <div class="setting-row">
+          <label>MCP Servers</label>
+          <div id="mcp-server-list" class="mcp-list"></div>
+          <div class="mcp-form" style="margin-top:8px">
+            <input id="mcp-name" type="text" placeholder="Server name" style="width:100%;margin-bottom:4px" />
+            <select id="mcp-transport" style="width:100%;margin-bottom:4px">
+              <option value="stdio">stdio</option>
+              <option value="sse">sse</option>
+            </select>
+            <input id="mcp-command" type="text" placeholder="Command or URL" style="width:100%;margin-bottom:4px" />
+            <input id="mcp-args" type="text" placeholder="Args (space separated, for stdio)" style="width:100%;margin-bottom:4px" />
+            <button id="mcp-add-btn" class="small-btn">Add Server</button>
+          </div>
+        </div>
+        <div class="setting-row">
           <label>Security</label>
           <input id="new-password" type="password" placeholder="New password" style="width:100%;margin-bottom:6px" />
           <input id="confirm-password" type="password" placeholder="Confirm new password" style="width:100%;margin-bottom:6px" />

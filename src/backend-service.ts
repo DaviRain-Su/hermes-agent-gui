@@ -19,6 +19,14 @@ import {
   type SetupFieldDef,
   type SubmitSetupResult,
 } from "./bun/setup";
+import {
+  initMcpManager,
+  listMcpServers,
+  addMcpServer,
+  removeMcpServer,
+  listMcpTools,
+  callMcpTool,
+} from "./mcp-manager";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -1606,6 +1614,12 @@ listSessions: async () => {
         return { success: false, error: e.message };
       }
     },
+
+    listMcpServers: async () => listMcpServers(),
+    addMcpServer: async (params) => addMcpServer(params),
+    removeMcpServer: async ({ name }) => removeMcpServer(name),
+    listMcpTools: async () => listMcpTools(),
+    callMcpTool: async (params) => callMcpTool(params),
   },
   messages: {},
 };
@@ -1727,6 +1741,7 @@ try {
 // ---------------------------------------------------------------------------
 console.log(`${APP_NAME} backend service starting...`);
 bootstrapApp();
+initMcpManager();
 
 // Graceful shutdown on SIGTERM/SIGINT
 process.on("SIGTERM", async () => {
