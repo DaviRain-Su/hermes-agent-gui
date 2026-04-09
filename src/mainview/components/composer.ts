@@ -2,7 +2,7 @@ import { $, $$, escapeHtml, showToast } from "../utils/dom.js";
 import { formatContent } from "../utils/format.js";
 import { rpc, showLoginOverlay } from "../utils/rpc.js";
 import { AppState, ChatMessage } from "../state.js";
-import { startRealtimeVoice, stopRealtimeVoice, isRealtimeConnected } from "./voice-rtc.ts";
+import { startVoiceListening } from "./chat.js";
 
 
 export function newChat() {
@@ -294,24 +294,21 @@ export function toggleVoiceMode(show?: boolean) {
     overlay.classList.toggle("hidden");
     AppState.voiceModeActive = !overlay.classList.contains("hidden");
   }
+  const mic = $("#voice-mic");
+  const status = $("#voice-status");
   if (!AppState.voiceModeActive) {
-    stopRealtimeVoice();
+    mic?.classList.remove("listening", "speaking");
+    window.speechSynthesis?.cancel();
+    if (status) {
+      status.textContent = "Tap microphone to speak";
+      status.className = "voice-status";
+    }
   }
 }
 
 export function initVoiceMode() {
   $("#voice-mode-btn")?.addEventListener("click", () => toggleVoiceMode(true));
-  $("#voice-close")?.addEventListener("click", () => {
-    toggleVoiceMode(false);
-    stopRealtimeVoice();
-  });
-  $("#voice-mic")?.addEventListener("click", async () => {
-    if (isRealtimeConnected()) {
-      stopRealtimeVoice();
-    } else {
-      await startRealtimeVoice();
-    }
-  });
+  $("#voice-close")?.addEventListener("click", () => toggleVoiceMode(false));
 }
 
 

@@ -874,9 +874,15 @@ export async function sendMessage() {
     let assistantContent = "";
     if (AppState.agentMode) {
       await runAgentLoop(body, contentDiv, AppState.activeStreamController, targetSessionId);
+      const lastAssistant = [...AppState.conversation].reverse().find((m) => m.role === "assistant");
+      assistantContent = lastAssistant?.content || "";
     } else {
       const result = await streamChatCompletion(body, contentDiv, AppState.activeStreamController.signal, targetSessionId);
       AppState.conversation.push({ role: "assistant", content: result.content });
+      assistantContent = result.content;
+    }
+    if (AppState.voiceModeActive && assistantContent) {
+      autoSpeak(assistantContent);
     }
   } catch (err: any) {
     if (err.name === "AbortError") {
@@ -893,6 +899,111 @@ export async function sendMessage() {
     sendBtn.disabled = false;
     sendBtn.classList.remove("loading");
     updateTokenUsageDisplay();
+  }
+}
+
+export function autoSpeak(text: string) {
+  if (!AppState.voiceModeActive) return;
+  const mic = $("#voice-mic");
+  const status = $("#voice-status");
+  mic?.classList.remove("listening");
+  mic?.classList.add("speaking");
+  if (status) {
+    status.textContent = "Speaking...";
+    status.className = "voice-status speaking";
+  }
+  const synth = window.speechSynthesis;
+  if (!synth) {
+    startVoiceListening();
+    return;
+  }
+  const stripMarkdown = (s: string) =>
+    s.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]+`/g, " ").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*_\-\[\]]/g, " ").replace(/\s+/g, " ").trim();
+  const utter = new SpeechSynthesisUtterance(stripMarkdown(text));
+  utter.lang = "zh-CN";
+  utter.onend = () => {
+    mic?.classList.remove("speaking");
+    startVoiceListening();
+  };
+  utter.onerror = () => {
+    mic?.classList.remove("speaking");
+    startVoiceListening();
+  };
+  synth.cancel();
+  synth.speak(utter);
+}
+
+export function startVoiceListening() {
+  if (!AppState.voiceModeActive) return;
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast("Speech recognition not supported in this browser");
+    return;
+  }
+  const mic = $("#voice-mic");
+  const status = $("#voice-status");
+  mic?.classList.add("listening");
+  mic?.classList.remove("speaking");
+  if (status) {
+    status.textContent = "Listening...";
+    status.className = "voice-status listening";
+  }
+  const rec = new SpeechRecognition();
+  rec.lang = "zh-CN";
+  rec.continuous = true;
+  rec.interimResults = true;
+  let finalTranscript = "";
+  let timeoutId: any;
+
+  rec.onresult = (event: any) => {
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+    if (status) status.textContent = (finalTranscript + interim).trim() || "Listening...";
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      rec.stop();
+    }, 1500);
+  };
+
+  rec.onerror = (event: any) => {
+    mic?.classList.remove("listening");
+    if (status) {
+      status.textContent = "Tap microphone to speak";
+      status.className = "voice-status";
+    }
+  };
+
+  rec.onend = () => {
+    mic?.classList.remove("listening");
+    if (status) {
+      status.textContent = "Tap microphone to speak";
+      status.className = "voice-status";
+    }
+    const text = finalTranscript.trim();
+    if (text && AppState.voiceModeActive) {
+      const input = $("#message-input") as HTMLInputElement | null;
+      if (input) input.value = text;
+      sendMessage();
+    }
+  };
+
+  const stopHandler = () => {
+    rec.stop();
+    mic?.removeEventListener("click", stopHandler);
+  };
+  mic?.addEventListener("click", stopHandler);
+
+  try {
+    rec.start();
+  } catch {
+    mic?.classList.remove("listening");
   }
 }
 

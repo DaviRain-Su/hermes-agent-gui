@@ -28,7 +28,9 @@ import {
   toggleVoiceMode,
   initVoiceMode,
 } from "./components/composer.js";
-
+import {
+  startVoiceListening,
+} from "./components/chat.js";
 import {
   renderErrorBanner,
   toggleSearch,
@@ -902,6 +904,7 @@ function initPage() {
 
   $("#send-btn")?.addEventListener("click", sendMessage);
   $("#agent-mode")?.addEventListener("change", () => toggleAgentMode());
+  $("#voice-mic")?.addEventListener("click", () => startVoiceListening());
 
   $("#new-chat-btn")?.addEventListener("click", newChat);
 
