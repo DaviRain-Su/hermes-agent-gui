@@ -31,6 +31,7 @@ import {
   listMcpTools,
   callMcpTool,
 } from "../mcp-manager";
+import { createRealtimeSession } from "../realtime-bridge";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -429,6 +430,7 @@ type AppRPCSchema = {
       removeMcpServer: { params: { name: string }; response: { success: boolean } };
       listMcpTools: { params: {}; response: { tools: any[] } };
       callMcpTool: { params: { server: string; name: string; arguments: any }; response: any };
+      createRealtimeSession: { params: {}; response: { success: boolean; clientSecret?: string; expiresAt?: number; error?: string } };
     };
     messages: {};
   }>;
@@ -686,6 +688,7 @@ const rpcHandlers: AppRPCSchema["bun"]["handlers"] = {
     removeMcpServer: async ({ name }) => removeMcpServer(name),
     listMcpTools: async () => listMcpTools(),
     callMcpTool: async (params) => callMcpTool(params),
+    createRealtimeSession: async () => createRealtimeSession(),
   },
   messages: {},
 };

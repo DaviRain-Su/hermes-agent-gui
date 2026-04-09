@@ -2,6 +2,7 @@ import { $, $$, escapeHtml, showToast } from "../utils/dom.js";
 import { formatContent } from "../utils/format.js";
 import { rpc, showLoginOverlay } from "../utils/rpc.js";
 import { AppState, ChatMessage } from "../state.js";
+import { startRealtimeVoice, stopRealtimeVoice, isRealtimeConnected } from "./voice-rtc.ts";
 
 
 export function newChat() {
@@ -293,20 +294,24 @@ export function toggleVoiceMode(show?: boolean) {
     overlay.classList.toggle("hidden");
     AppState.voiceModeActive = !overlay.classList.contains("hidden");
   }
-  const mic = $("#voice-mic");
-  const status = $("#voice-status");
-  if (AppState.voiceModeActive) {
-    mic?.classList.remove("listening", "speaking");
-    if (status) {
-      status.textContent = "Tap microphone to speak";
-      status.className = "voice-status";
-    }
+  if (!AppState.voiceModeActive) {
+    stopRealtimeVoice();
   }
 }
 
 export function initVoiceMode() {
   $("#voice-mode-btn")?.addEventListener("click", () => toggleVoiceMode(true));
-  $("#voice-close")?.addEventListener("click", () => toggleVoiceMode(false));
+  $("#voice-close")?.addEventListener("click", () => {
+    toggleVoiceMode(false);
+    stopRealtimeVoice();
+  });
+  $("#voice-mic")?.addEventListener("click", async () => {
+    if (isRealtimeConnected()) {
+      stopRealtimeVoice();
+    } else {
+      await startRealtimeVoice();
+    }
+  });
 }
 
 

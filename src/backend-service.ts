@@ -27,6 +27,7 @@ import {
   listMcpTools,
   callMcpTool,
 } from "./mcp-manager";
+import { createRealtimeSession } from "./realtime-bridge";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -1620,6 +1621,7 @@ listSessions: async () => {
     removeMcpServer: async ({ name }) => removeMcpServer(name),
     listMcpTools: async () => listMcpTools(),
     callMcpTool: async (params) => callMcpTool(params),
+    createRealtimeSession: async () => createRealtimeSession(),
   },
   messages: {},
 };
