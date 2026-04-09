@@ -2805,6 +2805,100 @@ function saveCustomCSS() {
   showToast("Custom CSS applied");
 }
 
+function collectHermesData(): Record<string, string> {
+  const data: Record<string, string> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("hermes-")) {
+      data[key] = localStorage.getItem(key) || "";
+    }
+  }
+  return data;
+}
+
+function restoreHermesData(data: Record<string, string>) {
+  Object.entries(data).forEach(([key, value]) => {
+    if (typeof value === "string") localStorage.setItem(key, value);
+  });
+}
+
+async function backupToGist() {
+  const patInput = $("#gist-pat") as HTMLInputElement | null;
+  const status = $("#gist-status");
+  const pat = patInput?.value.trim();
+  if (!pat) {
+    status && (status.textContent = "Please enter a PAT");
+    return;
+  }
+  status && (status.textContent = "Backing up...");
+  try {
+    const payload = {
+      description: "Hermes Agent GUI settings backup",
+      public: false,
+      files: {
+        "hermes-backup.json": {
+          content: JSON.stringify({
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            data: collectHermesData(),
+          }, null, 2),
+        },
+      },
+    };
+    const gistId = localStorage.getItem("hermes-gist-id");
+    const url = gistId ? `https://api.github.com/gists/${gistId}` : "https://api.github.com/gists";
+    const method = gistId ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `token ${pat}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    localStorage.setItem("hermes-gist-id", json.id);
+    status && (status.textContent = `Backed up to gist ${json.id}`);
+  } catch (e: any) {
+    status && (status.textContent = "Backup failed: " + (e.message || e));
+  }
+}
+
+async function restoreFromGist() {
+  const patInput = $("#gist-pat") as HTMLInputElement | null;
+  const status = $("#gist-status");
+  const pat = patInput?.value.trim();
+  const gistId = localStorage.getItem("hermes-gist-id");
+  if (!pat) {
+    status && (status.textContent = "Please enter a PAT");
+    return;
+  }
+  if (!gistId) {
+    status && (status.textContent = "No gist ID found. Backup first.");
+    return;
+  }
+  status && (status.textContent = "Restoring...");
+  try {
+    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: { Authorization: `token ${pat}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const file = json.files && json.files["hermes-backup.json"];
+    if (!file) throw new Error("Backup file not found in gist");
+    const content = file.content || (await fetch(file.raw_url).then((r) => r.text()));
+    const parsed = JSON.parse(content);
+    if (parsed.data) restoreHermesData(parsed.data);
+    applyCustomCSS();
+    renderSnippets();
+    status && (status.textContent = "Restored successfully");
+    showToast("Settings restored from Gist");
+  } catch (e: any) {
+    status && (status.textContent = "Restore failed: " + (e.message || e));
+  }
+}
+
 function showShortcutsOverlay() {
   $("#shortcuts-overlay")?.classList.remove("hidden");
 }
@@ -3639,6 +3733,19 @@ function initPage() {
   // Custom CSS
   applyCustomCSS();
   $("#custom-css-save")?.addEventListener("click", saveCustomCSS);
+  $("#gist-backup")?.addEventListener("click", backupToGist);
+  $("#gist-restore")?.addEventListener("click", restoreFromGist);
+  const patInput = $("#gist-pat") as HTMLInputElement | null;
+  if (patInput) {
+    const savedPat = localStorage.getItem("hermes-gist-pat");
+    if (savedPat) patInput.value = savedPat;
+    patInput.addEventListener("change", () => {
+      localStorage.setItem("hermes-gist-pat", patInput.value);
+    });
+  }
+  const gistStatus = $("#gist-status");
+  const savedGistId = localStorage.getItem("hermes-gist-id");
+  if (gistStatus && savedGistId) gistStatus.textContent = `Gist: ${savedGistId}`;
 
   // Drag resize for rightpanel
   (function initRightpanelResize() {

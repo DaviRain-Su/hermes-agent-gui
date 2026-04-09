@@ -446,6 +446,15 @@
           <textarea id="custom-css-input" rows="4" placeholder="/* your custom styles */"></textarea>
           <button id="custom-css-save" class="small-btn" style="margin-top:6px">Apply CSS</button>
         </div>
+        <div class="setting-row">
+          <label>Cloud Sync (Gist)</label>
+          <input id="gist-pat" type="password" placeholder="GitHub Personal Access Token" style="width:100%;margin-bottom:6px" />
+          <div class="profile-actions" style="gap:6px">
+            <button id="gist-backup" class="small-btn">Backup</button>
+            <button id="gist-restore" class="small-btn">Restore</button>
+          </div>
+          <div id="gist-status" style="font-size:11px;color:var(--text-secondary);margin-top:4px"></div>
+        </div>
       </div>
     </div>
   </div>
