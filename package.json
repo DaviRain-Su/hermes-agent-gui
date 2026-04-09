@@ -20,6 +20,8 @@
     "files": [
       "electron/**/*",
       "src/backend-service.ts",
+      "src/mcp-manager.ts",
+      "src/realtime-bridge.ts",
       "src/mainview/**/*",
       "src/bun/**/*",
       "python/**/*",
