@@ -65,11 +65,11 @@ To build the distributable packages locally:
 npm run dist
 ```
 
-Artifacts will appear in `dist-electron/`:
-- `Hermes Agent-0.2.0.AppImage`
-- `hermes-agent-gui_0.2.0_amd64.deb`
-- `Hermes Agent-0.2.0.dmg`
-- `Hermes Agent-0.2.0-mac.zip`
+Artifacts will appear in `dist-electron/` (version numbers follow `package.json`):
+- `Hermes Agent-x.x.x.AppImage`
+- `hermes-agent-gui_x.x.x_amd64.deb`
+- `Hermes Agent-x.x.x.dmg`
+- `Hermes Agent-x.x.x-mac.zip`
 
 ## Architecture
 
@@ -116,8 +116,8 @@ This repo uses GitHub Actions to build and publish releases automatically.
 1. Bump the version in `package.json`.
 2. Create and push a Git tag:
    ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.5.0
+   git push origin v0.5.0
    ```
 3. GitHub Actions builds Linux (AppImage / deb) and macOS (DMG / zip) packages and uploads them to the release page.
 
