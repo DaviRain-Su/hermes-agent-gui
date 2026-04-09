@@ -1265,6 +1265,18 @@ function appendMessage(role: "user" | "assistant", content: string, timestamp?: 
   replyBtn.textContent = "Reply";
   replyBtn.addEventListener("click", () => replyToMessage(wrapper));
   actions.appendChild(replyBtn);
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "Copy";
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+    } catch {
+      showToast("Copy failed");
+    }
+  });
+  actions.appendChild(copyBtn);
   if (role === "user") {
     const editBtn = document.createElement("button");
     editBtn.textContent = "Edit";
