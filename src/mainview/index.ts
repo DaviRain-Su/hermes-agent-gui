@@ -2778,10 +2778,31 @@ function openSettings() {
     btn.classList.toggle("active", (btn as HTMLButtonElement).dataset.theme === savedTheme);
   });
   renderSnippets();
+  const cssInput = $("#custom-css-input") as HTMLTextAreaElement | null;
+  if (cssInput) cssInput.value = localStorage.getItem("hermes-custom-css") || "";
 }
 
 function closeSettings() {
   $("#settings-overlay")?.classList.add("hidden");
+}
+
+function applyCustomCSS() {
+  const css = localStorage.getItem("hermes-custom-css") || "";
+  let style = $("#custom-css-override") as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "custom-css-override";
+    document.head.appendChild(style);
+  }
+  style.textContent = css;
+}
+
+function saveCustomCSS() {
+  const cssInput = $("#custom-css-input") as HTMLTextAreaElement | null;
+  if (!cssInput) return;
+  localStorage.setItem("hermes-custom-css", cssInput.value);
+  applyCustomCSS();
+  showToast("Custom CSS applied");
 }
 
 function showShortcutsOverlay() {
@@ -3566,6 +3587,10 @@ function initPage() {
   $("#preview-save")?.addEventListener("click", savePreview);
   $("#ws-new-file")?.addEventListener("click", createWsFile);
   $("#ws-new-dir")?.addEventListener("click", createWsDir);
+
+  // Custom CSS
+  applyCustomCSS();
+  $("#custom-css-save")?.addEventListener("click", saveCustomCSS);
 
   // Drag resize for rightpanel
   (function initRightpanelResize() {

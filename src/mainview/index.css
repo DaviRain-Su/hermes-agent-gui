@@ -2746,6 +2746,19 @@ html, body {
   color: var(--accent);
 }
 
+#custom-css-input {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical;
+  min-height: 80px;
+}
+
 .profile-list {
   display: flex;
   flex-direction: column;
