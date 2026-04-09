@@ -324,7 +324,6 @@ async function startBackend(): Promise<boolean> {
       if (done) break;
       const text = new TextDecoder().decode(value);
       console.log("[Hermes]", text);
-      mainWindowRef?.webview.rpc?.send.backendLog({ stream: "stdout", text });
     }
   })();
 
@@ -336,7 +335,6 @@ async function startBackend(): Promise<boolean> {
       if (done) break;
       const text = new TextDecoder().decode(value);
       console.error("[Hermes Err]", text);
-      mainWindowRef?.webview.rpc?.send.backendLog({ stream: "stderr", text });
     }
   })();
 
@@ -349,11 +347,6 @@ async function startBackend(): Promise<boolean> {
       if (res.ok) {
         console.log("Hermes backend is ready");
         backendReady = true;
-        mainWindowRef?.webview.rpc?.send.backendStatus({
-          running: true,
-          port: BACKEND_PORT,
-          url: `http://127.0.0.1:${BACKEND_PORT}`,
-        });
         return true;
       }
     } catch {
@@ -1475,8 +1468,8 @@ listSessions: async () => {
       sendInstallStatus({ phase: "installing", message: "Preparing installation...", progress: 0, canCancel: true });
 
       const result = await runInstallation(
-        (stream, text) => {
-          mainWindowRef?.webview.rpc?.send.installLog({ stream, text });
+        (_stream, _text) => {
+          // No webview to push logs to in backend-service mode
         },
         (status) => {
           sendInstallStatus({
