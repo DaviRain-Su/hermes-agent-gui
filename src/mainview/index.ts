@@ -1,6 +1,19 @@
 // ---------------------------------------------------------------------------
 import { $, $$, escapeHtml, updateDocumentTitle, showToast } from "./utils/dom.js";
 import { formatContent, formatContentForPrint } from "./utils/format.js";
+import { rpc, onRpcSend, showLoginOverlay } from "./utils/rpc.js";
+import {
+  loadWorkspace,
+  openPreview,
+  closePreview,
+  savePreview,
+  createWsFile,
+  createWsDir,
+  renameWsEntry,
+  deleteWsEntry,
+  showWorkspaceContextMenu,
+  hideWorkspaceContextMenu,
+} from "./components/workspace.js";
 import {
   BackendStatus,
   ChatMessage,
@@ -12,62 +25,19 @@ import {
   AppState,
 } from "./state.js";
 
-// ---------------------------------------------------------------------------
-// Simple HTTP-RPC client (replaces Electroview for Tauri/Linux compatibility)
-// ---------------------------------------------------------------------------
-const RPC_ENDPOINT = "http://127.0.0.1:55000/rpc";
-let rpcReqId = 0;
-
-async function rpcRequest(method: string, params?: any): Promise<any> {
-  const id = ++rpcReqId;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const token = localStorage.getItem("hermes-auth-token");
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(RPC_ENDPOINT, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ type: "request", id, method, params: params ?? {} }),
-  });
-  if (res.status === 401) {
-    localStorage.removeItem("hermes-auth-token");
-    showLoginOverlay();
-    throw new Error("Session expired. Please sign in again.");
+// Register RPC send handlers
+onRpcSend("backendStatus", (status: BackendStatus) => {
+  updateBackendStatusUI(status);
+  if (status.running && !AppState.backendUrl) {
+    AppState.backendUrl = status.url;
+    initAfterBackendReady();
   }
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-  const body = await res.json();
-  if (body.error) {
-    throw new Error(body.error);
-  }
-  return body.result;
-}
-
-const rpc = {
-  request: new Proxy({} as any, {
-    get: (_target, prop) => {
-      return (params: any) => rpcRequest(String(prop), params);
-    },
-  }),
-  send: {
-    backendStatus: (status: BackendStatus) => {
-      updateBackendStatusUI(status);
-      if (status.running && !AppState.backendUrl) {
-        AppState.backendUrl = status.url;
-        initAfterBackendReady();
-      }
-    },
-    backendLog: (msg: { stream: "stdout" | "stderr"; text: string }) => {
-      console.log(`[Backend ${msg.stream}]`, msg.text);
-    },
-    installStatus: (status: { phase: string; progress?: number; message?: string; canCancel?: boolean; canRetry?: boolean }) => {
-      handleInstallStatus(status);
-    },
-    installLog: (msg: { stream: "stdout" | "stderr"; text: string }) => {
-      appendInstallLog(msg);
-    },
-  },
-};
+});
+onRpcSend("backendLog", (msg: { stream: "stdout" | "stderr"; text: string }) => {
+  console.log(`[Backend ${msg.stream}]`, msg.text);
+});
+onRpcSend("installStatus", handleInstallStatus);
+onRpcSend("installLog", appendInstallLog);
 
 // ---------------------------------------------------------------------------
 // Debug banner helpers
@@ -202,256 +172,6 @@ async function loadModels() {
 }
 
 // ---------------------------------------------------------------------------
-// Skills
-// ---------------------------------------------------------------------------
-async function loadWorkspace() {
-  try {
-    const [data, git] = await Promise.all([
-      rpc.request.listWorkspace({ path: AppState.workspacePath, sessionId: AppState.currentSessionId || undefined }),
-      rpc.request.getGitInfo({ sessionId: AppState.currentSessionId || undefined }).catch(() => ({ branch: null, dirtyCount: 0 })),
-    ]);
-    const container = $("#workspace-list");
-    if (!container) return;
-    const entries = data.entries || [];
-    if (entries.length === 0) {
-      container.innerHTML = '<div class="panel-empty">No files</div>';
-    } else {
-      container.innerHTML = entries.map((e: any) => `
-        <div class="workspace-item ${e.isDirectory ? 'folder' : 'file'}" data-path="${escapeHtml(e.relPath)}" data-dir="${e.isDirectory ? '1' : '0'}">
-          <span>${e.isDirectory ? '📁' : '📄'} ${escapeHtml(e.name)}</span>
-          <span class="ws-actions">
-            <button data-action="rename" title="Rename">R</button>
-            <button data-action="delete" title="Delete">✕</button>
-          </span>
-        </div>
-      `).join("");
-      container.querySelectorAll<HTMLDivElement>(".workspace-item").forEach((el) => {
-        el.addEventListener("click", (e) => {
-          if ((e.target as HTMLElement).closest(".ws-actions")) return;
-          const isDir = el.dataset.dir === "1";
-          const p = el.dataset.path || "";
-          if (isDir) {
-            AppState.workspacePath = p;
-            closePreview();
-            loadWorkspace();
-          } else {
-            openPreview(p);
-          }
-        });
-        el.querySelector<HTMLButtonElement>('[data-action="rename"]')?.addEventListener("click", (e) => {
-          e.stopPropagation();
-          renameWsEntry(el.dataset.path || "");
-        });
-        el.querySelector<HTMLButtonElement>('[data-action="delete"]')?.addEventListener("click", (e) => {
-          e.stopPropagation();
-          deleteWsEntry(el.dataset.path || "");
-        });
-        el.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          const isDir = el.dataset.dir === "1";
-          showWorkspaceContextMenu(e, el.dataset.path || "", isDir);
-        });
-      });
-    }
-
-    // Breadcrumb
-    const bc = $("#workspace-breadcrumb");
-    if (bc) {
-      const parts = AppState.workspacePath.split("/").filter(Boolean);
-      bc.innerHTML = `<span data-idx="-1">~</span>` + parts.map((p, i) => ` / <span data-idx="${i}">${escapeHtml(p)}</span>`).join("");
-      bc.querySelectorAll("span").forEach((sp) => {
-        sp.addEventListener("click", () => {
-          const idx = parseInt(sp.dataset.idx || "-1", 10);
-          AppState.workspacePath = parts.slice(0, idx + 1).join("/");
-          closePreview();
-          loadWorkspace();
-        });
-      });
-    }
-
-    // Git badge
-    const gb = $("#git-badge");
-    if (gb) {
-      if (git.branch) {
-        gb.textContent = `${git.branch}${git.dirtyCount ? ` (+${git.dirtyCount})` : ''}`;
-      } else {
-        gb.textContent = "";
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load workspace:", e);
-    $("#workspace-list")!.innerHTML = '<div class="panel-empty">Error loading workspace</div>';
-  }
-}
-
-async function openPreview(path: string) {
-  try {
-    const data = await rpc.request.readWorkspaceFile({ path, sessionId: AppState.currentSessionId || undefined });
-    if (data.error) {
-      alert(data.error);
-      return;
-    }
-    const preview = $("#workspace-preview");
-    const filename = $("#preview-filename");
-    const contentEl = $("#preview-content");
-    const editor = $("#preview-editor") as HTMLTextAreaElement | null;
-    const saveBtn = $("#preview-save");
-    if (!preview || !filename || !contentEl) return;
-
-    preview.classList.remove("hidden");
-    filename.textContent = path.split("/").pop() || path;
-    AppState.previewHasChanges = false;
-
-    const isMarkdown = path.toLowerCase().endsWith(".md");
-    const isImage = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"].some((e) => path.toLowerCase().endsWith(e));
-
-    if (isImage) {
-      editor?.classList.add("hidden");
-      saveBtn?.classList.add("hidden");
-      contentEl.innerHTML = `<img src="${escapeHtml(data.content || "")}" style="max-width:100%;border-radius:8px;display:block;" alt="${escapeHtml(path)}" />`;
-    } else {
-      editor?.classList.remove("hidden");
-      saveBtn?.classList.remove("hidden");
-      if (editor) editor.value = data.content || "";
-      if (isMarkdown) {
-        contentEl.innerHTML = formatContent(data.content || "");
-      } else {
-        contentEl.innerHTML = `<pre><code>${escapeHtml(data.content || "")}</code></pre>`;
-      }
-      if (editor) {
-        editor.oninput = () => {
-          AppState.previewHasChanges = true;
-          saveBtn?.classList.remove("hidden");
-        };
-      }
-    }
-  } catch (e: any) {
-    alert("Preview failed: " + e.message);
-  }
-}
-
-function closePreview() {
-  const preview = $("#workspace-preview");
-  if (preview) preview.classList.add("hidden");
-  AppState.previewHasChanges = false;
-}
-
-async function savePreview() {
-  const editor = $("#preview-editor") as HTMLTextAreaElement | null;
-  const filename = $("#preview-filename");
-  if (!editor || !filename) return;
-  const name = filename.textContent || "";
-  const path = AppState.workspacePath ? `${AppState.workspacePath}/${name}` : name;
-  try {
-    const res = await rpc.request.saveWorkspaceFile({
-      path,
-      content: editor.value,
-      sessionId: AppState.currentSessionId || undefined,
-    });
-    if (res.success) {
-      AppState.previewHasChanges = false;
-      $("#preview-save")?.classList.add("hidden");
-    } else {
-      alert("Save failed: " + (res.error || "Unknown error"));
-    }
-  } catch (e: any) {
-    alert("Save failed: " + e.message);
-  }
-}
-
-async function createWsFile() {
-  const name = prompt("New file name:");
-  if (!name) return;
-  const path = AppState.workspacePath ? `${AppState.workspacePath}/${name}` : name;
-  try {
-    const res = await rpc.request.saveWorkspaceFile({ path, content: "", sessionId: AppState.currentSessionId || undefined });
-    if (res.success) loadWorkspace();
-  } catch (e: any) {
-    alert("Create failed: " + e.message);
-  }
-}
-
-async function createWsDir() {
-  const name = prompt("New folder name:");
-  if (!name) return;
-  const path = AppState.workspacePath ? `${AppState.workspacePath}/${name}` : name;
-  try {
-    const res = await rpc.request.createWorkspaceDir({ path, sessionId: AppState.currentSessionId || undefined });
-    if (res.success) loadWorkspace();
-  } catch (e: any) {
-    alert("Create failed: " + e.message);
-  }
-}
-
-async function renameWsEntry(path: string) {
-  const name = path.split("/").pop() || path;
-  const newName = prompt("Rename:", name);
-  if (!newName || newName === name) return;
-  try {
-    const res = await rpc.request.renameWorkspaceFile({ path, newName, sessionId: AppState.currentSessionId || undefined });
-    if (res.success) {
-      if (AppState.previewHasChanges && $("#preview-filename")?.textContent === name) closePreview();
-      loadWorkspace();
-    } else {
-      alert("Rename failed: " + (res.error || "Unknown error"));
-    }
-  } catch (e: any) {
-    alert("Rename failed: " + e.message);
-  }
-}
-
-async function deleteWsEntry(path: string) {
-  if (!confirm(`Delete "${path.split("/").pop()}?"`)) return;
-  try {
-    const res = await rpc.request.deleteWorkspaceFile({ path, sessionId: AppState.currentSessionId || undefined });
-    if (res.success) {
-      if ($("#preview-filename")?.textContent === path.split("/").pop()) closePreview();
-      loadWorkspace();
-    } else {
-      alert("Delete failed: " + (res.error || "Unknown error"));
-    }
-  } catch (e: any) {
-    alert("Delete failed: " + e.message);
-  }
-}
-
-function hideWorkspaceContextMenu() {
-  $(".workspace-context-menu")?.remove();
-}
-
-function showWorkspaceContextMenu(e: MouseEvent, path: string, isDirectory: boolean) {
-  e.preventDefault();
-  hideWorkspaceContextMenu();
-  const menu = document.createElement("div");
-  menu.className = "workspace-context-menu";
-  menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;`;
-  const items: { label: string; action: () => void }[] = [];
-  items.push({
-    label: isDirectory ? "Open folder" : "Open file",
-    action: () => {
-      if (isDirectory) {
-        AppState.workspacePath = path;
-        closePreview();
-        loadWorkspace();
-      } else {
-        openPreview(path);
-      }
-    },
-  });
-  items.push({ label: "Rename", action: () => renameWsEntry(path) });
-  items.push({ label: "Delete", action: () => deleteWsEntry(path) });
-  items.forEach((it) => {
-    const row = document.createElement("div");
-    row.className = "context-menu-item";
-    row.textContent = it.label;
-    row.addEventListener("click", () => {
-      it.action();
-      hideWorkspaceContextMenu();
-    });
-    menu.appendChild(row);
-  });
-  document.body.appendChild(menu);
-}
 
 async function loadTasks() {
   try {
@@ -3286,13 +3006,6 @@ function openManualInstall() {
 
 // ---------------------------------------------------------------------------
 // Event Listeners
-// ---------------------------------------------------------------------------
-function showLoginOverlay() {
-  $("#login-overlay")?.classList.remove("hidden");
-  const input = $("#login-password") as HTMLInputElement | null;
-  input?.focus();
-}
-
 function hideLoginOverlay() {
   $("#login-overlay")?.classList.add("hidden");
   const err = $("#login-error");
