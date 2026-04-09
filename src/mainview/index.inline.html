@@ -199,6 +199,7 @@
         <button id="export-md-btn" class="icon-btn" title="Export Markdown" aria-label="Export Markdown">↓</button>
         <button id="export-pdf-btn" class="icon-btn" title="Print / Save as PDF" aria-label="Print / Save as PDF">🖨️</button>
         <button id="search-btn" class="icon-btn" title="Search messages" aria-label="Search messages">🔍</button>
+        <button id="compare-btn" class="icon-btn" title="Model compare" aria-label="Model compare">⚖️</button>
         <button id="settings-btn" class="icon-btn settings-btn" aria-label="Settings">⚙</button>
       </header>
 
@@ -208,6 +209,32 @@
         <button id="chat-search-prev" class="icon-btn small" aria-label="Previous match">▲</button>
         <button id="chat-search-next" class="icon-btn small" aria-label="Next match">▼</button>
         <button id="chat-search-close" class="icon-btn small" aria-label="Close search">✕</button>
+      </div>
+
+      <!-- Model Compare panel -->
+      <div id="compare-panel" class="compare-panel hidden">
+        <div class="compare-header">
+          <h3>Model Compare</h3>
+          <button id="compare-close" class="icon-btn small" aria-label="Close compare">✕</button>
+        </div>
+        <div class="compare-controls">
+          <div class="compare-inputs">
+            <input id="compare-model-a" type="text" placeholder="Model A (e.g. gpt-4o)" />
+            <input id="compare-model-b" type="text" placeholder="Model B (e.g. claude-3.5)" />
+          </div>
+          <textarea id="compare-prompt" rows="2" placeholder="Enter shared prompt..."></textarea>
+          <button id="compare-run" class="send-btn">Compare</button>
+        </div>
+        <div class="compare-results">
+          <div class="compare-col">
+            <div class="compare-col-title">Model A</div>
+            <div id="compare-result-a" class="compare-content"></div>
+          </div>
+          <div class="compare-col">
+            <div class="compare-col-title">Model B</div>
+            <div id="compare-result-b" class="compare-content"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Drop overlay -->
@@ -3019,6 +3046,44 @@ function showShortcutsOverlay() {
 function hideShortcutsOverlay() {
   $("#shortcuts-overlay")?.classList.add("hidden");
 }
+function toggleCompareMode(show) {
+  const panel = $("#compare-panel");
+  if (!panel)
+    return;
+  const shouldShow = show !== undefined ? show : panel.classList.contains("hidden");
+  if (shouldShow) {
+    panel.classList.remove("hidden");
+  } else {
+    panel.classList.add("hidden");
+  }
+}
+async function runComparison() {
+  const modelA = ($("#compare-model-a")?.value || "").trim();
+  const modelB = ($("#compare-model-b")?.value || "").trim();
+  const prompt2 = ($("#compare-prompt")?.value || "").trim();
+  if (!modelA || !modelB || !prompt2) {
+    showToast("Please fill both models and the prompt");
+    return;
+  }
+  const resultA = $("#compare-result-a");
+  const resultB = $("#compare-result-b");
+  resultA.innerHTML = `<div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span><span>Thinking</span></div>`;
+  resultB.innerHTML = `<div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span><span>Thinking</span></div>`;
+  const runSide = async (model, container) => {
+    const ctrl = new AbortController;
+    const body = {
+      model,
+      messages: [{ role: "user", content: prompt2 }],
+      stream: true
+    };
+    try {
+      await streamChatCompletion(body, container, ctrl.signal, currentSessionId || "new");
+    } catch (err) {
+      container.innerHTML = `<p style="color:#ef4444">Error: ${escapeHtml(err.message || String(err))}</p>`;
+    }
+  };
+  await Promise.all([runSide(modelA, resultA), runSide(modelB, resultB)]);
+}
 function exportToMarkdown() {
   if (!conversation.length) {
     showToast("No conversation to export");
@@ -3651,6 +3716,9 @@ function initPage() {
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
   $("#export-pdf-btn")?.addEventListener("click", exportToPDF);
   $("#search-btn")?.addEventListener("click", () => toggleSearch(true));
+  $("#compare-btn")?.addEventListener("click", () => toggleCompareMode(true));
+  $("#compare-close")?.addEventListener("click", () => toggleCompareMode(false));
+  $("#compare-run")?.addEventListener("click", runComparison);
   $("#chat-search-close")?.addEventListener("click", () => toggleSearch(false));
   $("#chat-search-prev")?.addEventListener("click", () => navigateSearch(-1));
   $("#chat-search-next")?.addEventListener("click", () => navigateSearch(1));

@@ -2813,6 +2813,48 @@ function hideShortcutsOverlay() {
   $("#shortcuts-overlay")?.classList.add("hidden");
 }
 
+function toggleCompareMode(show?: boolean) {
+  const panel = $("#compare-panel");
+  if (!panel) return;
+  const shouldShow = show !== undefined ? show : panel.classList.contains("hidden");
+  if (shouldShow) {
+    panel.classList.remove("hidden");
+  } else {
+    panel.classList.add("hidden");
+  }
+}
+
+async function runComparison() {
+  const modelA = (($("#compare-model-a") as HTMLInputElement | null)?.value || "").trim();
+  const modelB = (($("#compare-model-b") as HTMLInputElement | null)?.value || "").trim();
+  const prompt = (($("#compare-prompt") as HTMLTextAreaElement | null)?.value || "").trim();
+  if (!modelA || !modelB || !prompt) {
+    showToast("Please fill both models and the prompt");
+    return;
+  }
+
+  const resultA = $("#compare-result-a")!;
+  const resultB = $("#compare-result-b")!;
+  resultA.innerHTML = `<div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span><span>Thinking</span></div>`;
+  resultB.innerHTML = `<div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span><span>Thinking</span></div>`;
+
+  const runSide = async (model: string, container: HTMLElement) => {
+    const ctrl = new AbortController();
+    const body = {
+      model,
+      messages: [{ role: "user", content: prompt }],
+      stream: true,
+    };
+    try {
+      await streamChatCompletion(body, container, ctrl.signal, currentSessionId || "new");
+    } catch (err: any) {
+      container.innerHTML = `<p style="color:#ef4444">Error: ${escapeHtml(err.message || String(err))}</p>`;
+    }
+  };
+
+  await Promise.all([runSide(modelA, resultA), runSide(modelB, resultB)]);
+}
+
 function exportToMarkdown() {
   if (!conversation.length) {
     showToast("No conversation to export");
@@ -3479,6 +3521,12 @@ function initPage() {
   $("#export-md-btn")?.addEventListener("click", exportToMarkdown);
   $("#export-pdf-btn")?.addEventListener("click", exportToPDF);
   $("#search-btn")?.addEventListener("click", () => toggleSearch(true));
+
+  $("#compare-btn")?.addEventListener("click", () => toggleCompareMode(true));
+
+  // Compare panel
+  $("#compare-close")?.addEventListener("click", () => toggleCompareMode(false));
+  $("#compare-run")?.addEventListener("click", runComparison);
 
   // Search bar
   $("#chat-search-close")?.addEventListener("click", () => toggleSearch(false));

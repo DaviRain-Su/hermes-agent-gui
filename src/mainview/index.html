@@ -199,6 +199,7 @@
         <button id="export-md-btn" class="icon-btn" title="Export Markdown" aria-label="Export Markdown">↓</button>
         <button id="export-pdf-btn" class="icon-btn" title="Print / Save as PDF" aria-label="Print / Save as PDF">🖨️</button>
         <button id="search-btn" class="icon-btn" title="Search messages" aria-label="Search messages">🔍</button>
+        <button id="compare-btn" class="icon-btn" title="Model compare" aria-label="Model compare">⚖️</button>
         <button id="settings-btn" class="icon-btn settings-btn" aria-label="Settings">⚙</button>
       </header>
 
@@ -208,6 +209,32 @@
         <button id="chat-search-prev" class="icon-btn small" aria-label="Previous match">▲</button>
         <button id="chat-search-next" class="icon-btn small" aria-label="Next match">▼</button>
         <button id="chat-search-close" class="icon-btn small" aria-label="Close search">✕</button>
+      </div>
+
+      <!-- Model Compare panel -->
+      <div id="compare-panel" class="compare-panel hidden">
+        <div class="compare-header">
+          <h3>Model Compare</h3>
+          <button id="compare-close" class="icon-btn small" aria-label="Close compare">✕</button>
+        </div>
+        <div class="compare-controls">
+          <div class="compare-inputs">
+            <input id="compare-model-a" type="text" placeholder="Model A (e.g. gpt-4o)" />
+            <input id="compare-model-b" type="text" placeholder="Model B (e.g. claude-3.5)" />
+          </div>
+          <textarea id="compare-prompt" rows="2" placeholder="Enter shared prompt..."></textarea>
+          <button id="compare-run" class="send-btn">Compare</button>
+        </div>
+        <div class="compare-results">
+          <div class="compare-col">
+            <div class="compare-col-title">Model A</div>
+            <div id="compare-result-a" class="compare-content"></div>
+          </div>
+          <div class="compare-col">
+            <div class="compare-col-title">Model B</div>
+            <div id="compare-result-b" class="compare-content"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Drop overlay -->
