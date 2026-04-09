@@ -2899,6 +2899,73 @@ async function restoreFromGist() {
   }
 }
 
+const PALETTE_COMMANDS = [
+  { id: "newChat", label: "New chat", shortcut: "Ctrl/Cmd+Shift+N", action: () => { newChat(); focusInput(); } },
+  { id: "focusInput", label: "Focus composer", shortcut: "Ctrl/Cmd+K", action: () => focusInput() },
+  { id: "toggleSearch", label: "Search messages", shortcut: "Ctrl/Cmd+Shift+F", action: () => toggleSearch(true) },
+  { id: "toggleCompare", label: "Open model compare", action: () => toggleCompareMode(true) },
+  { id: "exportMarkdown", label: "Export conversation to Markdown", action: () => exportToMarkdown() },
+  { id: "exportPDF", label: "Print / Save as PDF", action: () => exportToPDF() },
+  { id: "toggleSettings", label: "Open settings", action: () => openSettings() },
+  { id: "toggleShortcuts", label: "Keyboard shortcuts", shortcut: "? or Ctrl/", action: () => showShortcutsOverlay() },
+  { id: "toggleThemeDark", label: "Theme: Dark", action: () => setTheme("dark") },
+  { id: "toggleThemeLight", label: "Theme: Light", action: () => setTheme("light") },
+  { id: "toggleThemeSystem", label: "Theme: System", action: () => setTheme("system") },
+  { id: "reloadWindow", label: "Reload window", action: () => location.reload() },
+];
+
+let paletteActiveIndex = -1;
+
+function showCommandPalette() {
+  const palette = $("#command-palette");
+  if (!palette) return;
+  palette.classList.remove("hidden");
+  const input = $("#command-palette-input") as HTMLInputElement | null;
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  paletteActiveIndex = -1;
+  renderCommandPalette("");
+}
+
+function hideCommandPalette() {
+  $("#command-palette")?.classList.add("hidden");
+  paletteActiveIndex = -1;
+}
+
+function renderCommandPalette(query: string) {
+  const list = $("#command-palette-list");
+  if (!list) return;
+  const q = query.trim().toLowerCase();
+  const items = PALETTE_COMMANDS.filter((c) =>
+    c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+  );
+  if (items.length === 0) {
+    list.innerHTML = `<div class="command-palette-item" style="color:var(--text-secondary)">No commands found</div>`;
+    return;
+  }
+  list.innerHTML = items.map((c, idx) => `
+    <div class="command-palette-item ${idx === 0 ? "active" : ""}" data-idx="${idx}" data-id="${c.id}">
+      <span>${escapeHtml(c.label)}</span>
+      ${c.shortcut ? `<span class="command-palette-shortcut">${escapeHtml(c.shortcut)}</span>` : ""}
+    </div>
+  `).join("");
+  list.querySelectorAll(".command-palette-item").forEach((el) => {
+    el.addEventListener("mouseenter", () => {
+      list.querySelectorAll(".command-palette-item").forEach((i) => i.classList.remove("active"));
+      el.classList.add("active");
+      paletteActiveIndex = parseInt((el as HTMLElement).dataset.idx || "-1", 10);
+    });
+    el.addEventListener("click", () => {
+      const id = (el as HTMLElement).dataset.id;
+      const cmd = PALETTE_COMMANDS.find((c) => c.id === id);
+      if (cmd) { hideCommandPalette(); cmd.action(); }
+    });
+  });
+  paletteActiveIndex = 0;
+}
+
 function showShortcutsOverlay() {
   $("#shortcuts-overlay")?.classList.remove("hidden");
 }
@@ -3621,6 +3688,8 @@ function initPage() {
   // Compare panel
   $("#compare-close")?.addEventListener("click", () => toggleCompareMode(false));
   $("#compare-run")?.addEventListener("click", runComparison);
+  const paletteInput = $("#command-palette-input") as HTMLInputElement | null;
+  paletteInput?.addEventListener("input", () => renderCommandPalette(paletteInput.value));
 
   // Search bar
   $("#chat-search-close")?.addEventListener("click", () => toggleSearch(false));
@@ -3870,6 +3939,45 @@ function initPage() {
 
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
+    const palette = $("#command-palette");
+    const paletteOpen = palette && !palette.classList.contains("hidden");
+    if (paletteOpen) {
+      const list = $("#command-palette-list");
+      const items = list ? Array.from(list.querySelectorAll<HTMLDivElement>(".command-palette-item")) : [];
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (paletteActiveIndex >= 0) items[paletteActiveIndex]?.classList.remove("active");
+        paletteActiveIndex = (paletteActiveIndex + 1) % items.length;
+        items[paletteActiveIndex]?.classList.add("active");
+        items[paletteActiveIndex]?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (paletteActiveIndex >= 0) items[paletteActiveIndex]?.classList.remove("active");
+        paletteActiveIndex = (paletteActiveIndex - 1 + items.length) % items.length;
+        items[paletteActiveIndex]?.classList.add("active");
+        items[paletteActiveIndex]?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const activeId = items[paletteActiveIndex]?.dataset.id;
+        const cmd = PALETTE_COMMANDS.find((c) => c.id === activeId);
+        if (cmd) { hideCommandPalette(); cmd.action(); }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        hideCommandPalette();
+        return;
+      }
+    }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      showCommandPalette();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
       e.preventDefault();
       newChat();
